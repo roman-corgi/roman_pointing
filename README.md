@@ -5,3 +5,9 @@ This repository includes basic utilities to compute Roman observatory pointing a
 The observatory orientation zero-point is such that the pitch angle will be the same as values computed for OS11.  The yaw, angle, however, will be different.  If the observatory is placed exactly at L2, then the yaw will be equal to the OS11 value plus 180 degrees.
 
 The Jupyter notebook in the `Notebooks` folder demonstrates how to use these utilities. 
+
+To install the backend, clone or download this repository, navigate to the top-level directory of the repository (the one containing file `setup.py`) and run:
+
+```
+pip install .
+```
