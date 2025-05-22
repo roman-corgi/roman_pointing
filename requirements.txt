@@ -2,4 +2,4 @@ numpy>=1.20.0
 scipy>=1.7.2
 astropy>=6.0.0
 astroquery>=0.4.8
-keplertools>=1.2.0
+angutils>=1.0.0

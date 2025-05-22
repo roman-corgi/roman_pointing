@@ -1,15 +1,41 @@
+[build-system]
+requires = ["setuptools>= 77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "roman_pointing"
 dynamic = ["dependencies", "version", "readme"]
+requires-python = ">= 3.10"
+authors = [
+  {name = "Dmitry Savransky", email = "ds264@cornell.edu"},
+]
+maintainers = [
+  {name = "Dmitry Savransky", email = "ds264@cornell.edu"}
+]
+description="Roman Observatory pointing calculation"
+license = "MIT"
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Education",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Topic :: Scientific/Engineering :: Physics",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/roman-corgi/roman_pointing"
+Repository = "https://github.com/roman-corgi/roman_pointing"
+Issues = "https://github.com/roman-corgi/roman_pointing/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "roman_pointing.__version__"}
 dependencies = {file = ["requirements.txt"]}
 readme = {file = ["README.md"]}
-
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -93,3 +119,6 @@ docstring-code-format = false
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
 docstring-code-line-length = "dynamic"
+
+[tool.black]
+line-length = 88

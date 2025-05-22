@@ -1,6 +1,6 @@
 import numpy as np
 import astropy.units as u
-from keplertools.angutils import projplane, calcang, rotMat
+from angutils.angutils import projplane, calcang, rotMat
 from astropy.coordinates import (
     SkyCoord,
     get_body_barycentric,
