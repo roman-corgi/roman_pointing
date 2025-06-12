@@ -53,7 +53,7 @@ def getL2Positions(ts):
 
     Returns:
         numpy.ndarray(float):
-            3xn array of sun barycentric positions where n is the size of ts
+            3xn array of approximate L2 barycentric positions where n is the size of ts
 
     """
     earth = SkyCoord(
