@@ -1,3 +1,5 @@
+![CI](https://img.shields.io/github/workflow/status/roman-corgi/roman_pointing/CI)
+
 # Roman Pointing
 
 This repository includes basic utilities to compute Roman observatory pointing angles, specifically the sun angle (angle between the unit vector pointing from the observatory to the target and the unit vector pointing from the observatory and the sun), along with the pitch and yaw settings such that the observatory boresight points at the target. 
