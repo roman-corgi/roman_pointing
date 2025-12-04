@@ -6,5 +6,4 @@ angutils>=1.0.0
 ipywidgets
 jupyterlab
 matplotlib
-astropy
-scipy
+
