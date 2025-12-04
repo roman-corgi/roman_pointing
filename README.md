@@ -11,3 +11,8 @@ To install the backend, clone or download this repository, navigate to the top-l
 ```
 pip install .
 ```
+
+
+# Roman Pointing Interface
+
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/rt538-del/roman_pointing/HEAD?labpath=Notebooks%2FRoman_Observability_Interface.ipynb)
