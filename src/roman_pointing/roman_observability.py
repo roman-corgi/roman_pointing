@@ -1,4 +1,8 @@
-﻿from roman_pointing import calcRomanAngles, getL2Positions, getSunPositions
+﻿from roman_pointing.roman_pointing import (
+    calcRomanAngles,
+    getL2Positions,
+    getSunPositions,
+)
 import astropy.units as u
 from astropy.time import Time
 from astroquery.simbad import Simbad
@@ -13,17 +17,18 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 def get_target_coords(target_names):
     """Query SIMBAD for astronomical target coordinates and proper motions.
 
     Retrieves celestial coordinates, parallax, proper motion, and radial velocity
-    data from SIMBAD database for specified astronomical objects. Transforms 
-    coordinates to Barycentric Mean Ecliptic frame for Roman Space Telescope 
+    data from SIMBAD database for specified astronomical objects. Transforms
+    coordinates to Barycentric Mean Ecliptic frame for Roman Space Telescope
     pointing calculations.
 
     Args:
         target_names (list of str):
-            List of astronomical object names recognizable by SIMBAD (e.g., 
+            List of astronomical object names recognizable by SIMBAD (e.g.,
             'Proxima Cen', 'Sirius', 'Betelgeuse').
 
     Returns:
@@ -48,16 +53,18 @@ def get_target_coords(target_names):
             res["dec"].value.data[0],
             unit=(res["ra"].unit, res["dec"].unit),
             frame="icrs",
-            distance=Distance(parallax=res["plx_value"].value.data[0] * res["plx_value"].unit),
+            distance=Distance(
+                parallax=res["plx_value"].value.data[0] * res["plx_value"].unit
+            ),
             pm_ra_cosdec=res["pmra"].value.data[0] * res["pmra"].unit,
             pm_dec=res["pmdec"].value.data[0] * res["pmdec"].unit,
             radial_velocity=res["rvz_radvel"].value.data[0] * res["rvz_radvel"].unit,
             equinox="J2000",
-            obstime="J2000"
+            obstime="J2000",
         ).transform_to(BarycentricMeanEcliptic)
 
         coords[name] = c_icrs
-    
+
     return coords
 
 
@@ -88,22 +95,19 @@ def compute_roman_angles(coord, start_date, days, time_step):
     t0 = Time(start_date, format="isot", scale="utc")
     ts = t0 + np.arange(0, days, time_step) * u.d
 
-    sun_ang, yaw, pitch, BCI = calcRomanAngles(
-        coord,
-        ts,
-        getL2Positions(ts)
-    )
-    
+    sun_ang, yaw, pitch, BCI = calcRomanAngles(coord, ts, getL2Positions(ts))
+
     return ts, sun_ang, yaw, pitch
 
 
 def compute_keepout(coords_dict, start_date, days, time_step, min_sun=54, max_sun=126):
-    """Determine observability windows for multiple targets based on solar angle constraints.
+    """Determine observability windows for multiple targets based on solar angle
+    constraints.
 
     Calculates when targets are observable by Roman Space Telescope based on solar
-    exclusion angle limits. The allowed solar angle range to avoid thermal and stray 
-    light issues while keeping the solar panels properly oriented is 54-126 degrees. 
-        
+    exclusion angle limits. The allowed solar angle range to avoid thermal and stray
+    light issues while keeping the solar panels properly oriented is 54-126 degrees.
+
     Args:
         coords_dict (dict):
             Dictionary mapping target names (str) to SkyCoord objects
@@ -136,17 +140,17 @@ def compute_keepout(coords_dict, start_date, days, time_step, min_sun=54, max_su
         )
 
         solar_angles[name] = sun_ang
-        keepout[name] = (sun_ang > min_sun*u.deg) & (sun_ang < max_sun*u.deg)
+        keepout[name] = (sun_ang > min_sun * u.deg) & (sun_ang < max_sun * u.deg)
 
         if ts_global is None:
             ts_global = ts
-    
+
     return ts_global, keepout, solar_angles
 
 
 def plot_solar_angle(ts, solar_angles_dict):
     """Generate a plot showing solar angles vs time for multiple targets.
-    
+
     Creates a line plot displaying how the solar angle changes over time for each
     target, with shaded regions indicating the keepout zones (< 54° and > 126°)
     where observations are not permitted.
@@ -175,8 +179,12 @@ def plot_solar_angle(ts, solar_angles_dict):
     ax.plot([0, len(ts)], [54, 54], "k--")
     ax.plot([0, len(ts)], [126, 126], "k--")
 
-    ax.fill_between([0, len(ts)], [54, 54], [0, 0], hatch="/", color="none", edgecolor="k")
-    ax.fill_between([0, len(ts)], [126, 126], [180, 180], hatch="\\", color="none", edgecolor="k")
+    ax.fill_between(
+        [0, len(ts)], [54, 54], [0, 0], hatch="/", color="none", edgecolor="k"
+    )
+    ax.fill_between(
+        [0, len(ts)], [126, 126], [180, 180], hatch="\\", color="none", edgecolor="k"
+    )
 
     ax.set_title("Solar Angle vs Time")
     ax.legend()
@@ -186,7 +194,7 @@ def plot_solar_angle(ts, solar_angles_dict):
 
 def plot_pitch(ts, pitch_dict):
     """Generate a plot showing pitch angles vs time for multiple targets.
-    
+
     Creates a line plot displaying the spacecraft pitch angle required to observe
     each target over time. Pitch angle represents the rotation about the telescope's
     horizontal axis.
@@ -218,7 +226,7 @@ def plot_pitch(ts, pitch_dict):
 
 def plot_keepout(keepout_dict, ts):
     """Create a visibility map showing when targets are observable.
-    
+
     Generates a color-coded heatmap displaying observability windows for multiple
     targets over time. Green indicates the target is within the allowed solar angle
     range (observable), while black indicates the target is in a keepout zone.
@@ -246,11 +254,11 @@ def plot_keepout(keepout_dict, ts):
 
     # Convert boolean to int for plotting
     komap_int = komap.astype(int)
-    
+
     # Create figure - make it taller for single targets
-    fig_height = 4 if M == 1 else max(3, 1.3*M + 1)
+    fig_height = 4 if M == 1 else max(3, 1.3 * M + 1)
     fig, ax = plt.subplots(figsize=(12, fig_height))
-    
+
     cmap = matplotlib.colors.ListedColormap(["black", "green"])
 
     # Use pcolormesh - works for both single and multiple targets
@@ -259,7 +267,7 @@ def plot_keepout(keepout_dict, ts):
         np.arange(M + 1),
         komap_int,
         cmap=cmap,
-        shading='flat'
+        shading="flat",
     )
 
     # Set y-ticks at row centers
@@ -274,7 +282,7 @@ def plot_keepout(keepout_dict, ts):
     cbar.ax.set_yticklabels(["Unavailable", "Available"])
 
     ax.set_title(f"Roman Keepout Map\n{ts[0].iso} → {ts[-1].iso}")
-    
+
     plt.tight_layout()
 
     return fig, ax
