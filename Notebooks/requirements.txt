@@ -1,6 +1,0 @@
-ipywidgets
-jupyterlab
-numpy
-matplotlib
-astropy
-scipy
