@@ -15,7 +15,16 @@ pip install .
 
 # Roman Pointing Interface
 
-Use notebook ``Roman Space Telescope Keepout Map Generator.ipynb``.
+Use notebook ``Roman Space Telescope Keepout Map Generator.ipynb`` for offline execution (internet connnection still required).
 
 To run in Colab, first go to:
 https://colab.research.google.com/github/roman-corgi/roman_pointing/blob/main/Notebooks/00_Google_Colab_Setup.ipynb
+
+Ensure that you are logged in with the Google account you wish to use (data will be written to the Google Drive associated with this account). You can check which account you are logged into by clicking on the user icon in the top right-hand corner of the page.
+
+Execute all of the cells in the notebook, responding to any pop-up prompts along the way (see the notebook for more detailed instructions). Note that you only need to run this notebook **once** (even if you log out/close the browser instance, the files written to your Google Drive will be persistent).
+
+After successfully executing the setup notebook, go to:
+https://colab.research.google.com/github/roman-corgi/roman_pointing/blob/main/Notebooks/01%20-%20Colab%20Roman%20Space%20Telescope%20Keepout%20Map%20Generato.ipynb
+
+For any subsequent sessions, go directly to this link. 
