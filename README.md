@@ -27,4 +27,6 @@ Execute all of the cells in the notebook, responding to any pop-up prompts along
 After successfully executing the setup notebook, go to:
 https://colab.research.google.com/github/roman-corgi/roman_pointing/blob/main/Notebooks/01%20-%20Colab%20Roman%20Space%20Telescope%20Keepout%20Map%20Generato.ipynb
 
+Click the 'Run all' button at the top of the screen.
+
 For any subsequent sessions, go directly to this link. 
