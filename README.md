@@ -16,3 +16,6 @@ pip install .
 # Roman Pointing Interface
 
 Use notebook ``Roman Space Telescope Keepout Map Generator.ipynb``.
+
+To run in Colab, first go to:
+https://colab.research.google.com/github/roman-corgi/roman_pointing/blob/main/Notebooks/00_Google_Colab_Setup.ipynb
