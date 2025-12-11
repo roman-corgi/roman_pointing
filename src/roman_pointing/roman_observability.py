@@ -1,16 +1,13 @@
 ﻿from roman_pointing.roman_pointing import (
     calcRomanAngles,
     getL2Positions,
-    getSunPositions,
 )
 import astropy.units as u
 from astropy.time import Time
 from astroquery.simbad import Simbad
-from astroquery.jplhorizons import Horizons
 from astropy.coordinates import (
     SkyCoord,
     Distance,
-    get_body_barycentric,
     BarycentricMeanEcliptic,
 )
 import matplotlib
@@ -18,7 +15,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import ipywidgets as widgets
 from IPython.display import clear_output
-import matplotlib.pyplot as plt
 
 
 def get_target_coords(target_names):
@@ -46,9 +42,25 @@ def get_target_coords(target_names):
     coords = {}
 
     for name in target_names:
+        if "bulge" in name.lower():
+            coords[name] = SkyCoord(
+                266.41681662,
+                -29.00782497,
+                unit=(u.deg, u.deg),
+                frame="icrs",
+                distance=8277 * u.pc,
+                pm_ra_cosdec=0 * u.mas / u.year,
+                pm_dec=0 * u.mas / u.year,
+                radial_velocity=0 * u.km / u.s,
+                equinox="J2000",
+                obstime="J2000",
+            ).transform_to(BarycentricMeanEcliptic)
+            continue
+
         res = simbad.query_object(name)
-        if res is None:
-            print(f"SIMBAD could not find {name}")
+
+        if len(res) == 0:
+            print(f"SIMBAD could not find {name}. Skipping.")
             continue
 
         c_icrs = SkyCoord(
@@ -191,10 +203,7 @@ def plot_solar_angle(ts, solar_angles_dict):
 
     ax.set_title("Solar Angle vs Time")
     # Move legend outside
-    ax.legend(
-        bbox_to_anchor=(1.15, 1),
-        loc='upper left'
-    )
+    ax.legend(bbox_to_anchor=(1.15, 1), loc="upper left")
 
     # Make room for legend
     fig.subplots_adjust(right=0.8)
@@ -229,11 +238,7 @@ def plot_pitch(ts, pitch_dict):
     ax.set_xlabel(f"Time after {ts[0].value} (days)")
     ax.set_ylabel("Pitch Angle (deg)")
     ax.set_title("Pitch Angle vs Time")
-    ax.legend(
-        bbox_to_anchor=(1.15, 1),
-        loc='upper left',
-        borderaxespad=0
-    )
+    ax.legend(bbox_to_anchor=(1.15, 1), loc="upper left", borderaxespad=0)
     fig.subplots_adjust(right=0.8)
     return fig, ax
 
@@ -333,18 +338,18 @@ def launch_ui():
 
     Creates and displays a comprehensive user interface for analyzing Roman Space
     Telescope target observability. The interface includes:
-    
+
     - Target input field for SIMBAD-recognized astronomical objects
     - Date range and time step configuration
     - Preset target collections (bright stars, exoplanet hosts, galaxies)
     - Collapsible help documentation
     - Real-time visualization generation
-    
+
     The UI generates three plots when run:
     1. Keepout map showing observability windows for all targets
     2. Solar angle evolution over time
     3. Pitch angle requirements over time
-    
+
     Additionally displays visibility statistics showing the percentage of time
     each target is observable during the specified observation period.
 
@@ -362,31 +367,37 @@ def launch_ui():
         All event handling and plotting occurs within the displayed interface.
     """
     target_input = widgets.Textarea(
-        value='Proxima Cen\nSirius\nBetelgeuse',
-        layout=widgets.Layout(width='500px', height='100px'),
-        description="Targets:"
+        value="47 UMa\n14 Her\nGalactic Bulge",
+        layout=widgets.Layout(width="500px", height="100px"),
+        description="Targets:",
     )
 
     start_date_input = widgets.Text(
-        value='2027-01-01T00:00:00',
-        layout=widgets.Layout(width='400px'),
-        description="Start Date:"
+        value="2027-01-01T00:00:00",
+        layout=widgets.Layout(width="400px"),
+        description="Start Date:",
     )
 
     days_input = widgets.IntSlider(
-        value=365, min=1, max=730, description="Days:",
-        layout=widgets.Layout(width='400px')
+        value=365,
+        min=1,
+        max=730,
+        description="Days:",
+        layout=widgets.Layout(width="400px"),
     )
 
     time_step_input = widgets.IntSlider(
-        value=1, min=1, max=10, description="Time Step:",
-        layout=widgets.Layout(width='400px')
+        value=1,
+        min=1,
+        max=10,
+        description="Time Step:",
+        layout=widgets.Layout(width="400px"),
     )
 
     run_button = widgets.Button(
         description="Generate Maps & Plots",
         button_style="primary",
-        layout=widgets.Layout(width='200px')
+        layout=widgets.Layout(width="200px"),
     )
 
     output = widgets.Output()
@@ -395,10 +406,11 @@ def launch_ui():
         value=False,
         description=" Input Instructions",
         button_style="info",
-        icon="question"
+        icon="question",
     )
 
-    help_box = widgets.HTML("""
+    help_box = widgets.HTML(
+        """
     <div style="font-family: Arial; background: #eef6ff; border: 1px solid #bcd4ff;
     border-radius: 6px; padding: 10px; margin-top: 2px;">
     <h4 style="margin-top:2px;">Input Guidelines</h4>
@@ -419,16 +431,18 @@ def launch_ui():
     <ul style="margin-top:-6px; margin-bottom:4px;">
     <li>Angles less than 54 or greater than 126 degrees are keep-out zones</li>
     <li>Names must match SIMBAD exactly</li>
+    <li>To include the location of the galactic bulge, add 'bulge' or 'galatcic bulge' to your list of targets.</li>
     </ul>
     </div>
-    """)
+    """
+    )
 
     help_panel = widgets.VBox([help_box])
     help_panel.layout.display = "none"
 
     def toggle_help(change):
         """Toggle visibility of help documentation panel.
-        
+
         Args:
             change (dict): Widget value change event containing 'new' key
                 with boolean value indicating toggle state.
@@ -438,17 +452,21 @@ def launch_ui():
     help_toggle.observe(toggle_help, "value")
 
     # Preset buttons
-    preset_stars = widgets.Button(description="⭐ Bright Stars", button_style="primary")
-    preset_exoplanets = widgets.Button(description="🪐 Exoplanet Hosts", button_style="warning")
-    preset_galaxies = widgets.Button(description="🌌 Galaxies")
+    preset_stars = widgets.Button(
+        description="⭐ Reference Stars", button_style="primary"
+    )
+    preset_exoplanets = widgets.Button(
+        description="🪐 Exoplanet Hosts", button_style="warning"
+    )
+    # preset_galaxies = widgets.Button(description="🌌 Galaxies")
 
     def load_stars(_):
-        """Load preset list of bright nearby stars into target input field."""
-        target_input.value = "Sirius\nBetelgeuse\nProcyon\nVega\nRigel"
+        """Load preset list of reference stars into target input field."""
+        target_input.value = "kap Ori\nbet CMa\nbet Leo\nbet Car\neps Ori\ndel Cas\nalf Ara\neta Cen\nrho Pup\neta UMa\ngam Ori\nalf Cyg\nbet Lup\nalf Lep\ndel Leo\nbet UMa\neta CMa\nalf Cep\ngam TrA\neps CMa\nalf Col\nbet TrA\nalf Gru\nbet CMi\nzet Pup\nbet Cas\nzet Oph\ndel Cru\nalf Peg\nalf Hyi\neta Tau\niot Car\nbet Tau\ndel Crv\neps UMa\nbet Eri\nalf02 CVn\nbet Lib\nzet Aql\ngam Peg"
 
     def load_exoplanets(_):
         """Load preset list of exoplanet host stars into target input field."""
-        target_input.value = "Proxima Cen\nTRAPPIST-1\n51 Peg\nKepler-22\nHD 189733"
+        target_input.value = "* 14 Her\n* 23 Lib\n* 47 UMa\n* alf Cen A\n* bet Gem\n* bet Pic\n* e Eri\n* eps Eri\n* gam Cep\n* mu. Ara\n* pi. Men\n* psi01 Dra B\n* rho01 Cnc\n* tau Cet\n* ups And\nHD 100546\nHD 114613\nHD 142\nHD 154345\nHD 190360\nHD 192310\nHD 217107\nHD 219077\nHD 219134\nHD 30562"
 
     def load_galaxies(_):
         """Load preset list of nearby galaxies into target input field."""
@@ -456,20 +474,20 @@ def launch_ui():
 
     preset_stars.on_click(load_stars)
     preset_exoplanets.on_click(load_exoplanets)
-    preset_galaxies.on_click(load_galaxies)
+    # preset_galaxies.on_click(load_galaxies)
 
-    preset_box = widgets.HBox([preset_stars, preset_exoplanets, preset_galaxies])
+    preset_box = widgets.HBox([preset_stars, preset_exoplanets])  # , preset_galaxies])
 
     def on_run_clicked(_):
         """Process targets and generate keepout maps and plots.
-        
+
         Main event handler that:
         1. Parses target names from input
         2. Queries SIMBAD for coordinates
         3. Computes keepout periods and solar/pitch angles
         4. Calculates visibility statistics
         5. Generates and displays three plots
-        
+
         Args:
             _: Button click event
         """
@@ -477,7 +495,9 @@ def launch_ui():
             clear_output(wait=True)
 
             try:
-                target_names = [t.strip() for t in target_input.value.split("\n") if t.strip()]
+                target_names = [
+                    t.strip() for t in target_input.value.split("\n") if t.strip()
+                ]
                 print(f"Processing {len(target_names)} targets...")
 
                 coords = get_target_coords(target_names)
@@ -488,7 +508,10 @@ def launch_ui():
                     return
 
                 ts, keepout, solar_angles = compute_keepout(
-                    coords, start_date_input.value, days_input.value, time_step_input.value
+                    coords,
+                    start_date_input.value,
+                    days_input.value,
+                    time_step_input.value,
                 )
 
                 # Visibility fractions
@@ -500,7 +523,10 @@ def launch_ui():
                 pitch_dict = {}
                 for name, coord in coords.items():
                     _, _, _, pitch = compute_roman_angles(
-                        coord, start_date_input.value, days_input.value, time_step_input.value
+                        coord,
+                        start_date_input.value,
+                        days_input.value,
+                        time_step_input.value,
                     )
                     pitch_dict[name] = pitch
 
@@ -516,22 +542,29 @@ def launch_ui():
             except Exception as e:
                 print(f"❌ Error: {e}")
                 import traceback
+
                 traceback.print_exc()
 
     # Attach event handler
     run_button.on_click(on_run_clicked)
 
     # Display UI
-    display(widgets.VBox([
-        widgets.HTML("<h2>🔭 Roman Space Telescope Keepout Map Generator 🔭</h2>"),
-        help_toggle,
-        help_panel,
-        widgets.HTML("<b>Target Input</b>"),
-        preset_box,
-        target_input,
-        start_date_input,
-        days_input,
-        time_step_input,
-        run_button,
-        output
-    ]))
+    display(  # noqa
+        widgets.VBox(
+            [
+                widgets.HTML(
+                    "<h2>🔭 Roman Space Telescope Keepout Map Generator 🔭</h2>"
+                ),
+                help_toggle,
+                help_panel,
+                widgets.HTML("<b>Target Input</b>"),
+                preset_box,
+                target_input,
+                start_date_input,
+                days_input,
+                time_step_input,
+                run_button,
+                output,
+            ]
+        )
+    )
