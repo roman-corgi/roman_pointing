@@ -15,4 +15,4 @@ pip install .
 
 # Roman Pointing Interface
 
-[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/rt538-del/roman_pointing/HEAD?labpath=Notebooks%2FRoman_Observability_Interface.ipynb)
+Use notebook ``Roman Space Telescope Keepout Map Generator.ipynb``.
