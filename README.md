@@ -6,7 +6,7 @@ The observatory orientation zero-point is such that the pitch angle will be the 
 
 The Jupyter notebook in the `Notebooks` folder demonstrates how to use these utilities. 
 
-To install the backend, clone or download this repository, navigate to the top-level directory of the repository (the one containing file `setup.py`) and run:
+To install the backend, clone or download this repository, navigate to the top-level directory of the repository (the one containing file `pyproject.toml`) and run:
 
 ```
 pip install .
