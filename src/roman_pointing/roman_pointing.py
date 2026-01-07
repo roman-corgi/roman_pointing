@@ -198,3 +198,10 @@ def getRomanPositionAngle(B_C_I):
 
     return np.array(PA_Z) * u.rad
 
+def getEXCAMPositionAngle(B_C_I):
+    PA_Z = getRomanPositionAngle(B_C_I)
+
+    PA_EXCAM_Y = PA_Z + 150 * u.deg
+
+    return PA_EXCAM_Y
+
