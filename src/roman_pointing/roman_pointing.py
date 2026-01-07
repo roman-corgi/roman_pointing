@@ -169,6 +169,29 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None):
 
     return sun_ang, yaw * u.rad, pitch * u.rad, B_C_I
 
+def applyRollAngle(B_C_I, roll_angles):
+    """Apply roll angles to the spacecraft body-centered inertial frame
+
+    Args:
+        B_C_I (numpy.ndarray(float)):
+            Matrix of spacecraft body-centered unit vectors in the inertial reference
+            frame. Should have dimension 3x3xn where n is the number of time steps.
+            The last axis represents time. Typically computed by calcRomanAngles().
+        roll_angles (numpy.ndarray(float) or astropy.units.Quantity):
+            Roll angles to apply at each time step. Should have length n matching
+            the time dimension of B_C_I. Roll is rotation about the b_1 body axis.
+
+    Returns:
+        numpy.ndarray(float):
+            Updated 3x3xn matrix of body-centered unit vectors after applying roll
+
+    """
+    B_C_I_roll = np.dstack(
+        [np.matmul(rotMat(1, a), B_C_I[:, :, j]) for j, a in enumerate(roll_angles)]
+    ) 
+
+    return B_C_I_roll
+
 def getRomanPositionAngle(B_C_I):
     """Compute the position angle of the Roman observatory +Z axis (b_3 body vector)
        with respect to celestial North, projected onto the instrument focal plane.
