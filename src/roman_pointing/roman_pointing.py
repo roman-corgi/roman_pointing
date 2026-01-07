@@ -168,3 +168,68 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None):
     )
 
     return sun_ang, yaw * u.rad, pitch * u.rad, B_C_I
+
+
+def applyRollAngle(B_C_I, roll_angles):
+    """Apply roll angles to the spacecraft body-centered inertial frame
+
+    Args:
+        B_C_I (numpy.ndarray(float)):
+            Matrix of spacecraft body-centered unit vectors in the inertial reference
+            frame. Should have dimension 3x3xn where n is the number of time steps.
+            The last axis represents time. Typically computed by calcRomanAngles().
+        roll_angles (numpy.ndarray(float) or astropy.units.Quantity):
+            Roll angles to apply at each time step. Should have length n matching
+            the time dimension of B_C_I. Roll is rotation about the b_1 body axis.
+
+    Returns:
+        numpy.ndarray(float):
+            Updated 3x3xn matrix of body-centered unit vectors after applying roll
+
+    """
+    B_C_I_roll = np.dstack(
+        [np.matmul(rotMat(1, a), B_C_I[:, :, j]) for j, a in enumerate(roll_angles)]
+    )
+
+    return B_C_I_roll
+
+
+def getRomanPositionAngle(B_C_I):
+    """Compute the position angle of the Roman observatory +Z axis (b_3 body vector)
+       with respect to celestial North, projected onto the instrument focal plane.
+
+    Args:
+        B_C_I (numpy.ndarray(float)):
+            Matrix of spacecraft body-centered unit vectors in the inertial reference
+            frame. Should have dimension 3x3xn where n is the number of time steps.
+            The last axis represents time. Typically computed by calcRomanAngles().
+
+    Returns:
+        astropy.units.Quantity(numpy.ndarray(float)):
+            Array of position angles at each time. Position angle is measured
+            counter-clockwise from celestial North to the observatory +Z (b_3 body
+            vector) axis.
+
+    """
+    b_1 = B_C_I[0, :, :]
+    b_3 = B_C_I[2, :, :]
+
+    celestial_north = SkyCoord(ra=0 * u.deg, dec=90 * u.deg, frame="icrs").transform_to(
+        BarycentricMeanEcliptic
+    )
+    rhat_north = celestial_north.cartesian.xyz.value
+
+    PA_Z = []
+    for t in range(b_3.shape[1]):
+        north_proj_YZplane = projplane(rhat_north.reshape(3, 1), b_1[:, t])
+        PA_Z.append(calcang(b_3[:, t], north_proj_YZplane, b_1[:, t]))
+
+    return np.array(PA_Z) * u.rad
+
+
+def getEXCAMPositionAngle(B_C_I):
+    PA_Z = getRomanPositionAngle(B_C_I)
+
+    PA_EXCAM_Y = PA_Z + 150 * u.deg
+
+    return PA_EXCAM_Y
