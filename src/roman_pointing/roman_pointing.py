@@ -168,3 +168,33 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None):
     )
 
     return sun_ang, yaw * u.rad, pitch * u.rad, B_C_I
+
+def getRomanPositionAngle(B_C_I):
+    """Compute the position angle of the Roman observatory +Z axis (b_3 body vector)
+       with respect to celestial North, projected onto the instrument focal plane.
+
+    Args:
+        B_C_I (numpy.ndarray(float)):
+            Matrix of spacecraft body-centered unit vectors in the inertial reference
+            frame. Should have dimension 3x3xn where n is the number of time steps.
+            The last axis represents time. Typically computed by calcRomanAngles().
+
+    Returns:
+        astropy.units.Quantity(numpy.ndarray(float)):
+            Array of position angles at each time. Position angle is measured counter-clockwise
+            from celestial North to the observatory +Z (b_3 body vector) axis.
+
+    """
+    b_1 = B_C_I[0, :, :]
+    b_3 = B_C_I[2, :, :]
+
+    celestial_north = SkyCoord(ra=0*u.deg, dec=90*u.deg, frame='icrs').transform_to(BarycentricMeanEcliptic)
+    rhat_north = celestial_north.cartesian.xyz.value
+
+    PA_Z = []
+    for t in range(b_3.shape[1]):
+        north_proj_YZplane = projplane(rhat_north.reshape(3,1), b_1[:,t])
+        PA_Z.append(calcang(b_3[:,t], north_proj_YZplane, b_1[:,t]))
+
+    return np.array(PA_Z) * u.rad
+
