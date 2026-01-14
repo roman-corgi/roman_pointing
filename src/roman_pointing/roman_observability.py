@@ -40,7 +40,8 @@ def get_target_coords(target_names):
 
     Note:
         This function prints a message to stdout when a target cannot be found
-        in SIMBAD. Special handling exists for galactic bulge targets.
+        in SIMBAD. Special handling exists for galactic bulge targets. Any missing
+        proper motion/radial velocity data will be set to 0
     """
     simbad = Simbad()
     simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
@@ -66,6 +67,10 @@ def get_target_coords(target_names):
         if len(res) == 0:
             print(f"SIMBAD could not find {name}. Skipping.")
             continue
+
+        # fill any missing proper motion values with 0
+        for col in ["pmra", "pmdec", "rvz_radvel"]:
+            res[col] = res[col].filled(0)
 
         c_icrs = SkyCoord(
             res["ra"].value.data[0],
