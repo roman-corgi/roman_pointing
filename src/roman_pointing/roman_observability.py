@@ -714,7 +714,7 @@ def launch_ui():
     )
 
     start_date_input = widgets.Text(
-        value="2027-01-01T00:00:00",
+        value="2026-12-01T00:00:00",
         layout=widgets.Layout(width="400px"),
         description="Start Date:",
     )
