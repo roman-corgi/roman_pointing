@@ -1,4 +1,5 @@
 # Roman Pointing
+[![Documentation Status](https://readthedocs.org/projects/roman-pointing/badge/?version=latest)](https://roman-pointing.readthedocs.io/en/latest/?badge=latest)
 
 This repository includes basic utilities to compute Roman observatory pointing angles, specifically the sun angle (angle between the unit vector pointing from the observatory to the target and the unit vector pointing from the observatory and the sun), along with the pitch and yaw settings such that the observatory boresight points at the target. 
 
