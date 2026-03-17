@@ -16,7 +16,7 @@ from roman_pointing.roman_observability import (
     compute_roman_angles,
     compute_keepout,
 )
-from Reference_Star_Selection_Tool import (
+from roman_pointing.Reference_Star_Selection_Tool import (
     load_catalog,
     select_ref_star,
     get_observable_windows,

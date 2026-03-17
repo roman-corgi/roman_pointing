@@ -1,6 +1,6 @@
 """Reference star selection module for the Roman Space Telescope.
 
-    - Loading the reference star catalog 
+    - Loading the reference star catalog
     - Building astropy SkyCoords from catalog rows using J2000 coordinates.
     - Computing Roman's observable windows via keepout.
     - Checking solar angle and pitch angle constraints day-by-day per window.
@@ -65,52 +65,59 @@ from roman_pointing.roman_observability import (
     compute_roman_angles,
     compute_keepout,
 )
+from roman_pointing.utils import get_cache_dir
 
 
 GRADE_COLUMNS = {
-    (1, 'high'): 'st_psfgrade_nfb1_high',
-    (1, 'med'):  'st_psfgrade_nfb1_med',
-    (3, 'high'): 'st_psfgrade_specb3_high',
-    (3, 'med'):  'st_psfgrade_specb3_med',
-    (4, 'high'): 'st_psfgrade_wfb4_high',
-    (4, 'med'):  'st_psfgrade_wfb4_med',
+    (1, "high"): "st_psfgrade_nfb1_high",
+    (1, "med"): "st_psfgrade_nfb1_med",
+    (3, "high"): "st_psfgrade_specb3_high",
+    (3, "med"): "st_psfgrade_specb3_med",
+    (4, "high"): "st_psfgrade_wfb4_high",
+    (4, "med"): "st_psfgrade_wfb4_med",
 }
 
 ALL_GRADE_COLUMNS = list(GRADE_COLUMNS.values())
 
-REF_GRADES = ['A', 'B', 'C']
+REF_GRADES = ["A", "B", "C"]
 
-SKIP_NAMES = {'-', 'TBD', '?', ''}
+SKIP_NAMES = {"-", "TBD", "?", ""}
 
 SUN_MIN = 54
 SUN_MAX = 126
 MAX_PITCH_DIFF = 5.0
 
 SORT_MODES = (
-    'valid_days',
-    'closest_mag',
-    'brightest',
-    'faintest',
-    'closest_pitch',
-    'farthest_pitch',
+    "valid_days",
+    "closest_mag",
+    "brightest",
+    "faintest",
+    "closest_pitch",
+    "farthest_pitch",
 )
 
 SORT_MODE_LABELS = {
-    'valid_days':     'Most valid days first',
-    'closest_mag':    'Closest magnitude to science target',
-    'brightest':      'Brightest first (ascending magnitude)',
-    'faintest':       'Faintest first (descending magnitude)',
-    'closest_pitch':  'Smallest pitch angle difference first',
-    'farthest_pitch': 'Largest pitch angle difference first',
+    "valid_days": "Most valid days first",
+    "closest_mag": "Closest magnitude to science target",
+    "brightest": "Brightest first (ascending magnitude)",
+    "faintest": "Faintest first (descending magnitude)",
+    "closest_pitch": "Smallest pitch angle difference first",
+    "farthest_pitch": "Largest pitch angle difference first",
 }
 
 CATALOG_COLUMNS = [
-    'main_id', 'st_name',
-    'ra', 'dec',
-    'sy_vmag', 'sy_imag',
-    'sy_dist', 'sy_plx',
-    'sy_pmra', 'sy_pmdec',
-    'st_radv', 'spectype',
+    "main_id",
+    "st_name",
+    "ra",
+    "dec",
+    "sy_vmag",
+    "sy_imag",
+    "sy_dist",
+    "sy_plx",
+    "sy_pmra",
+    "sy_pmdec",
+    "st_radv",
+    "spectype",
 ]
 
 LARGE_SENTINEL = 1e9
@@ -120,7 +127,7 @@ LARGE_SENTINEL = 1e9
 CATALOG_URL = "https://corgidb.sioslab.com/fetch_refs.php"
 
 #: On-disk CSV cache placed next to this module.
-DEFAULT_CACHE_PATH = Path(__file__).parent / "ref_star_catalog_cache.csv"
+DEFAULT_CACHE_PATH = Path(get_cache_dir()) / "ref_star_catalog_cache.csv"
 
 #: Hours before the cache is considered stale and a live fetch is attempted.
 MAX_CACHE_AGE_HOURS = 24.0
@@ -140,6 +147,7 @@ _FETCH_COLUMNS = [
     "sy_pmdec",
     "st_radv",
 ]
+
 
 def safe_float(value):
     """Return the float representation of a value, or None if missing or NaN.
@@ -181,34 +189,46 @@ def make_sort_key(sort_mode):
     Raises:
         ValueError: If ``sort_mode`` is not a recognised value.
     """
-    if sort_mode == 'valid_days':
-        def key(ref):
-            return (ref['grade_rank'], -ref['n_valid_days'])
+    if sort_mode == "valid_days":
 
-    elif sort_mode == 'closest_mag':
         def key(ref):
-            diff = ref['mag_diff'] if ref['mag_diff'] is not None else LARGE_SENTINEL
-            return (ref['grade_rank'], diff)
+            return (ref["grade_rank"], -ref["n_valid_days"])
 
-    elif sort_mode == 'brightest':
-        def key(ref):
-            mag = ref['mag'] if ref['mag'] is not None else LARGE_SENTINEL
-            return (ref['grade_rank'], mag)
+    elif sort_mode == "closest_mag":
 
-    elif sort_mode == 'faintest':
         def key(ref):
-            mag = ref['mag'] if ref['mag'] is not None else -LARGE_SENTINEL
-            return (ref['grade_rank'], -mag)
+            diff = ref["mag_diff"] if ref["mag_diff"] is not None else LARGE_SENTINEL
+            return (ref["grade_rank"], diff)
 
-    elif sort_mode == 'closest_pitch':
-        def key(ref):
-            pitch = ref['min_pitch_diff'] if ref['min_pitch_diff'] < 999 else LARGE_SENTINEL
-            return (ref['grade_rank'], pitch)
+    elif sort_mode == "brightest":
 
-    elif sort_mode == 'farthest_pitch':
         def key(ref):
-            pitch = ref['min_pitch_diff'] if ref['min_pitch_diff'] < 999 else -LARGE_SENTINEL
-            return (ref['grade_rank'], -pitch)
+            mag = ref["mag"] if ref["mag"] is not None else LARGE_SENTINEL
+            return (ref["grade_rank"], mag)
+
+    elif sort_mode == "faintest":
+
+        def key(ref):
+            mag = ref["mag"] if ref["mag"] is not None else -LARGE_SENTINEL
+            return (ref["grade_rank"], -mag)
+
+    elif sort_mode == "closest_pitch":
+
+        def key(ref):
+            pitch = (
+                ref["min_pitch_diff"] if ref["min_pitch_diff"] < 999 else LARGE_SENTINEL
+            )
+            return (ref["grade_rank"], pitch)
+
+    elif sort_mode == "farthest_pitch":
+
+        def key(ref):
+            pitch = (
+                ref["min_pitch_diff"]
+                if ref["min_pitch_diff"] < 999
+                else -LARGE_SENTINEL
+            )
+            return (ref["grade_rank"], -pitch)
 
     else:
         raise ValueError(
@@ -216,6 +236,7 @@ def make_sort_key(sort_mode):
         )
 
     return key
+
 
 def _cache_is_fresh(cache_path: Path, max_age_hours: float) -> bool:
     """Return True if *cache_path* exists and is younger than *max_age_hours*."""
@@ -269,10 +290,19 @@ def _fetch_catalog(url: str) -> pd.DataFrame:
 
 def _coerce_catalog(df: pd.DataFrame) -> pd.DataFrame:
     """Coerce numeric columns, fill missing grade columns, derive dist from plx."""
-    for col in ('ra', 'dec', 'sy_vmag', 'sy_imag',
-                'sy_dist', 'sy_plx', 'sy_pmra', 'sy_pmdec', 'st_radv'):
+    for col in (
+        "ra",
+        "dec",
+        "sy_vmag",
+        "sy_imag",
+        "sy_dist",
+        "sy_plx",
+        "sy_pmra",
+        "sy_pmdec",
+        "st_radv",
+    ):
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Ensure every grade column exists (NaN when not returned by the server)
     for gcol in ALL_GRADE_COLUMNS:
@@ -280,25 +310,22 @@ def _coerce_catalog(df: pd.DataFrame) -> pd.DataFrame:
             df[gcol] = np.nan
 
     # Derive sy_dist from parallax where missing
-    if 'sy_dist' in df.columns and 'sy_plx' in df.columns:
-        missing_dist = (
-            df['sy_dist'].isna()
-            & df['sy_plx'].notna()
-            & (df['sy_plx'] > 0)
-        )
+    if "sy_dist" in df.columns and "sy_plx" in df.columns:
+        missing_dist = df["sy_dist"].isna() & df["sy_plx"].notna() & (df["sy_plx"] > 0)
         n_derived = int(missing_dist.sum())
         if n_derived:
             from astropy.coordinates import Distance
-            df.loc[missing_dist, 'sy_dist'] = Distance(
-                parallax=df.loc[missing_dist, 'sy_plx'].values * u.mas
+
+            df.loc[missing_dist, "sy_dist"] = Distance(
+                parallax=df.loc[missing_dist, "sy_plx"].values * u.mas
             ).pc
             print(
                 f"  Derived sy_dist from sy_plx for {n_derived} "
                 f"star(s) (in memory only)."
             )
 
-    df['mag_v'] = df.get('sy_vmag')
-    df['mag_i'] = df.get('sy_imag')
+    df["mag_v"] = df.get("sy_vmag")
+    df["mag_i"] = df.get("sy_imag")
     return df
 
 
@@ -398,12 +425,12 @@ def get_science_mag(sci_name, band, catalog=None, engine=None):
     Returns:
         float or None: The magnitude value, or None if not found.
     """
-    mag_col = 'sy_vmag' if band == 1 else 'sy_imag'
-    band_label = 'V' if band == 1 else 'I'
+    mag_col = "sy_vmag" if band == 1 else "sy_imag"
+    band_label = "V" if band == 1 else "I"
 
     if catalog is not None:
         match = catalog[
-            (catalog['main_id'] == sci_name) | (catalog['st_name'] == sci_name)
+            (catalog["main_id"] == sci_name) | (catalog["st_name"] == sci_name)
         ]
         if not match.empty:
             val = safe_float(match.iloc[0].get(mag_col))
@@ -437,6 +464,7 @@ def build_skycoord(star):
         astropy.coordinates.SkyCoord: The star's position in
         ``BarycentricMeanEcliptic``.
     """
+
     def val(key, fallback=None):
         raw = star[key] if isinstance(star, dict) else star.get(key, fallback)
         return (
@@ -446,24 +474,24 @@ def build_skycoord(star):
         )
 
     kwargs = dict(
-        ra=val('ra') * u.degree,
-        dec=val('dec') * u.degree,
-        frame='icrs',
-        equinox='J2000',
-        obstime='J2000',
+        ra=val("ra") * u.degree,
+        dec=val("dec") * u.degree,
+        frame="icrs",
+        equinox="J2000",
+        obstime="J2000",
     )
 
-    if val('sy_plx'):
-        kwargs['distance'] = c.Distance(parallax=val('sy_plx') * u.mas)
-    elif val('sy_dist'):
-        kwargs['distance'] = val('sy_dist') * u.parsec
+    if val("sy_plx"):
+        kwargs["distance"] = c.Distance(parallax=val("sy_plx") * u.mas)
+    elif val("sy_dist"):
+        kwargs["distance"] = val("sy_dist") * u.parsec
 
-    if val('sy_pmra'):
-        kwargs['pm_ra_cosdec'] = val('sy_pmra') * u.mas / u.yr
-    if val('sy_pmdec'):
-        kwargs['pm_dec'] = val('sy_pmdec') * u.mas / u.yr
-    if val('st_radv'):
-        kwargs['radial_velocity'] = val('st_radv') * u.km / u.s
+    if val("sy_pmra"):
+        kwargs["pm_ra_cosdec"] = val("sy_pmra") * u.mas / u.yr
+    if val("sy_pmdec"):
+        kwargs["pm_dec"] = val("sy_pmdec") * u.mas / u.yr
+    if val("st_radv"):
+        kwargs["radial_velocity"] = val("st_radv") * u.km / u.s
 
     return c.SkyCoord(**kwargs).transform_to(c.BarycentricMeanEcliptic)
 
@@ -495,22 +523,26 @@ def get_observable_windows(times, keepout_array):
             start_idx = i
         elif not observable and in_window:
             in_window = False
-            windows.append((
-                times[start_idx],
-                times[i - 1],
-                times[start_idx].iso.split('T')[0],
-                times[i - 1].iso.split('T')[0],
-                times[i - 1].mjd - times[start_idx].mjd,
-            ))
+            windows.append(
+                (
+                    times[start_idx],
+                    times[i - 1],
+                    times[start_idx].iso.split("T")[0],
+                    times[i - 1].iso.split("T")[0],
+                    times[i - 1].mjd - times[start_idx].mjd,
+                )
+            )
 
     if in_window:
-        windows.append((
-            times[start_idx],
-            times[-1],
-            times[start_idx].iso.split('T')[0],
-            times[-1].iso.split('T')[0],
-            times[-1].mjd - times[start_idx].mjd,
-        ))
+        windows.append(
+            (
+                times[start_idx],
+                times[-1],
+                times[start_idx].iso.split("T")[0],
+                times[-1].iso.split("T")[0],
+                times[-1].mjd - times[start_idx].mjd,
+            )
+        )
 
     return windows
 
@@ -548,7 +580,7 @@ def check_ref_in_window(ref_coord, win_start, win_end, sci_pitch_in_window):
     if duration_days <= 0:
         return False, 0, 999.0, np.array([]), np.array([], dtype=bool)
 
-    start_str = win_start.isot if hasattr(win_start, 'isot') else str(win_start)
+    start_str = win_start.isot if hasattr(win_start, "isot") else str(win_start)
 
     _, ref_sun_ang, _, ref_pitch = compute_roman_angles(
         ref_coord, start_str, duration_days, time_step=1.0
@@ -589,7 +621,7 @@ def select_ref_star(
     engine=None,
     time_step=1.0,
     allowed_grades=None,
-    sort_mode='valid_days',
+    sort_mode="valid_days",
 ):
     """Find all valid reference stars for each observable window of a science target.
 
@@ -657,20 +689,18 @@ def select_ref_star(
     """
     key = (band, contrast.lower())
     if key not in GRADE_COLUMNS:
-        valid = ', '.join(f"band={b} contrast={ct}" for b, ct in GRADE_COLUMNS)
+        valid = ", ".join(f"band={b} contrast={ct}" for b, ct in GRADE_COLUMNS)
         raise ValueError(
             f"Unknown (band={band}, contrast='{contrast}'). "
             f"Valid combinations: {valid}"
         )
 
     if sort_mode not in SORT_MODES:
-        raise ValueError(
-            f"Unknown sort_mode='{sort_mode}'. Valid: {SORT_MODES}"
-        )
+        raise ValueError(f"Unknown sort_mode='{sort_mode}'. Valid: {SORT_MODES}")
 
     grade_col = GRADE_COLUMNS[key]
-    mag_col = 'mag_v' if band == 1 else 'mag_i'
-    band_label = 'V' if band == 1 else 'I'
+    mag_col = "mag_v" if band == 1 else "mag_i"
+    band_label = "V" if band == 1 else "I"
 
     print(f"\nUsing grade column: {grade_col}  |  mag column: {mag_col}")
 
@@ -681,10 +711,10 @@ def select_ref_star(
         if col_name not in candidates.columns:
             return False
         sample = candidates[col_name].dropna()
-        return len(sample) > 0 and sample.astype(str).str.match(r'^[ABC]$').any()
+        return len(sample) > 0 and sample.astype(str).str.match(r"^[ABC]$").any()
 
     grade_source = None
-    for _try in ('grade', grade_col, 'st_psfgrade'):
+    for _try in ("grade", grade_col, "st_psfgrade"):
         if _is_usable_grade_col(_try):
             grade_source = _try
             break
@@ -696,14 +726,16 @@ def select_ref_star(
                 break
     if grade_source is None:
         print(f"  Catalog columns: {list(candidates.columns)}")
-        print(f"  Sample row:\n{candidates.iloc[0].to_dict() if len(candidates) else 'empty'}")
+        print(
+            f"  Sample row:\n{candidates.iloc[0].to_dict() if len(candidates) else 'empty'}"
+        )
         raise ValueError(
             f"Could not find a usable grade column (containing A/B/C values). "
             f"Available columns: {list(catalog.columns)}"
         )
 
     print(f"  Using grade source column: '{grade_source}'")
-    candidates['grade'] = candidates[grade_source].astype(str).str.strip()
+    candidates["grade"] = candidates[grade_source].astype(str).str.strip()
 
     active_grades = list(allowed_grades) if allowed_grades else list(REF_GRADES)
     active_grades = [g for g in active_grades if g in REF_GRADES]
@@ -715,13 +747,10 @@ def select_ref_star(
 
     grade_rank_map = {g: i for i, g in enumerate(active_grades)}
 
-    candidates = candidates[candidates['grade'].isin(active_grades)].copy()
+    candidates = candidates[candidates["grade"].isin(active_grades)].copy()
     candidates = candidates.dropna(subset=[mag_col])
-    candidates['grade_rank'] = (
-        candidates['grade']
-        .map(grade_rank_map)
-        .fillna(99)
-        .astype(int)
+    candidates["grade_rank"] = (
+        candidates["grade"].map(grade_rank_map).fillna(99).astype(int)
     )
 
     print(f"Grade filter: {active_grades} — {len(candidates)} candidate(s) remaining.")
@@ -729,15 +758,15 @@ def select_ref_star(
     print(f"Querying SIMBAD for science target '{sci_name}'...")
     coords = get_target_coords([sci_name])
     if sci_name not in coords:
-        return {'error': f"Science target '{sci_name}' not found in SIMBAD."}
+        return {"error": f"Science target '{sci_name}' not found in SIMBAD."}
     sci_coord = coords[sci_name]
     print(f"  Found '{sci_name}'.\n")
 
     print(f"Looking up {band_label}-band magnitude for '{sci_name}'...")
     sci_mag = get_science_mag(sci_name, band, catalog=catalog)
 
-    if sort_mode == 'closest_mag' and sci_mag is None:
-        effective_sort = 'brightest'
+    if sort_mode == "closest_mag" and sci_mag is None:
+        effective_sort = "brightest"
         sort_method = (
             f"grade ({'>'.join(active_grades)}) then brightest {band_label} "
             f"(closest_mag requested but no science target magnitude found)"
@@ -763,17 +792,16 @@ def select_ref_star(
     windows = get_observable_windows(times, sci_keepout)
     if not windows:
         return {
-            'science_target': sci_name,
-            'band': band,
-            'contrast': contrast,
-            'grade_column': grade_col,
-            'allowed_grades': active_grades,
-            'sort_mode': sort_mode,
-            'effective_sort': effective_sort,
-            'sci_mag': sci_mag,
-            'error': (
-                f"'{sci_name}' is never observable by Roman "
-                f"during this period."
+            "science_target": sci_name,
+            "band": band,
+            "contrast": contrast,
+            "grade_column": grade_col,
+            "allowed_grades": active_grades,
+            "sort_mode": sort_mode,
+            "effective_sort": effective_sort,
+            "sci_mag": sci_mag,
+            "error": (
+                f"'{sci_name}' is never observable by Roman " f"during this period."
             ),
         }
 
@@ -789,7 +817,7 @@ def select_ref_star(
     print("Building reference star coordinates (J2000)...")
     ref_coords = {}
     for _, ref in candidates.iterrows():
-        name = ref['main_id']
+        name = ref["main_id"]
         if not isinstance(name, str) or name.strip() in SKIP_NAMES:
             continue
         try:
@@ -809,11 +837,11 @@ def select_ref_star(
 
         win_start_idx = int((win_start.mjd - times[0].mjd) / time_step)
         win_end_idx = int((win_end.mjd - times[0].mjd) / time_step)
-        sci_pitch_win = sci_pitch_vals[win_start_idx:win_end_idx + 1]
+        sci_pitch_win = sci_pitch_vals[win_start_idx : win_end_idx + 1]
 
         n_days_win = int(round(win_end.mjd - win_start.mjd)) + 1
         dates = [
-            (win_start + i * u.day).to_value('iso', subfmt='date')
+            (win_start + i * u.day).to_value("iso", subfmt="date")
             for i in range(n_days_win)
         ]
 
@@ -821,12 +849,15 @@ def select_ref_star(
         pitch_series = {}
 
         for _, ref in candidates.iterrows():
-            ref_name = ref['main_id']
+            ref_name = ref["main_id"]
             if ref_name not in ref_coords:
                 continue
 
             passes, n_days, min_pitch, pd_series, valid_mask = check_ref_in_window(
-                ref_coords[ref_name], win_start, win_end, sci_pitch_win,
+                ref_coords[ref_name],
+                win_start,
+                win_end,
+                sci_pitch_win,
             )
             pitch_series[ref_name] = pd_series
 
@@ -834,14 +865,14 @@ def select_ref_star(
                 continue
 
             valid_date_strs = [
-                (win_start + int(d) * u.day).to_value('iso', subfmt='date')
+                (win_start + int(d) * u.day).to_value("iso", subfmt="date")
                 for d in np.where(valid_mask)[0]
             ]
 
             ref_mag = safe_float(ref.get(mag_col))
 
             if (
-                effective_sort == 'closest_mag'
+                effective_sort == "closest_mag"
                 and sci_mag is not None
                 and ref_mag is not None
             ):
@@ -849,69 +880,73 @@ def select_ref_star(
             else:
                 mag_diff = None
 
-            valid_refs.append({
-                'reference_star': ref_name,
-                'grade':          ref['grade'],
-                'grade_rank':     int(ref['grade_rank']),
-                'mag':            ref_mag,
-                'mag_diff':       mag_diff,
-                'n_valid_days':   n_days,
-                'min_pitch_diff': min_pitch,
-                'valid_dates':    valid_date_strs,
-            })
+            valid_refs.append(
+                {
+                    "reference_star": ref_name,
+                    "grade": ref["grade"],
+                    "grade_rank": int(ref["grade_rank"]),
+                    "mag": ref_mag,
+                    "mag_diff": mag_diff,
+                    "n_valid_days": n_days,
+                    "min_pitch_diff": min_pitch,
+                    "valid_dates": valid_date_strs,
+                }
+            )
 
         valid_refs.sort(key=sort_key)
 
         avail_data = {
-            r['reference_star']: [d in set(r['valid_dates']) for d in dates]
+            r["reference_star"]: [d in set(r["valid_dates"]) for d in dates]
             for r in valid_refs
         }
         avail_df = pd.DataFrame(avail_data, index=dates)
-        avail_df.index.name = 'date'
+        avail_df.index.name = "date"
 
         pitch_data = {}
         for r in valid_refs:
-            name = r['reference_star']
+            name = r["reference_star"]
             series = pitch_series.get(name, np.array([]))
-            vals = list(series[:len(dates)])
+            vals = list(series[: len(dates)])
             vals += [np.nan] * (len(dates) - len(vals))
             pitch_data[name] = vals
 
         pitch_df = pd.DataFrame(pitch_data, index=dates)
-        pitch_df.index.name = 'date'
+        pitch_df.index.name = "date"
 
-        safe_name = sci_name.replace(' ', '_').replace('*', '').strip('_')
+        safe_name = sci_name.replace(" ", "_").replace("*", "").strip("_")
         csv_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
             f"pitch_table_{safe_name}_band{band}_{contrast}_window{win_idx + 1}.csv",
         )
-        pitch_df.to_csv(csv_path, float_format='%.3f')
+        pitch_df.to_csv(csv_path, float_format="%.3f")
         print(f"  Pitch table saved → {csv_path}")
         print(f"  Found {len(valid_refs)} valid reference star(s).")
 
-        results.append({
-            'start':         ws,
-            'end':           we,
-            'duration_days': wd,
-            'valid_refs':    valid_refs,
-            'best_ref':      valid_refs[0] if valid_refs else None,
-            'pitch_df':      pitch_df,
-            'pitch_csv':     csv_path,
-            'avail_df':      avail_df,
-        })
+        results.append(
+            {
+                "start": ws,
+                "end": we,
+                "duration_days": wd,
+                "valid_refs": valid_refs,
+                "best_ref": valid_refs[0] if valid_refs else None,
+                "pitch_df": pitch_df,
+                "pitch_csv": csv_path,
+                "avail_df": avail_df,
+            }
+        )
 
     return {
-        'science_target':     sci_name,
-        'band':               band,
-        'contrast':           contrast,
-        'grade_column':       grade_col,
-        'allowed_grades':     active_grades,
-        'sort_mode':          sort_mode,
-        'effective_sort':     effective_sort,
-        'sci_mag':            sci_mag,
-        'visibility_pct':     visibility_pct,
-        'sort_method':        sort_method,
-        'observable_windows': results,
+        "science_target": sci_name,
+        "band": band,
+        "contrast": contrast,
+        "grade_column": grade_col,
+        "allowed_grades": active_grades,
+        "sort_mode": sort_mode,
+        "effective_sort": effective_sort,
+        "sci_mag": sci_mag,
+        "visibility_pct": visibility_pct,
+        "sort_method": sort_method,
+        "observable_windows": results,
     }
 
 
@@ -920,18 +955,21 @@ if __name__ == "__main__":
 
     SCIENCE_TARGET = "47 Uma"
     BAND = 1
-    CONTRAST = 'high'
+    CONTRAST = "high"
     ANALYSIS_START = "2026-12-01T00:00:00"
     ANALYSIS_DAYS = 365
-    ALLOWED_GRADES = ['A', 'B', 'C']
-    SORT_MODE = 'closest_mag'
+    ALLOWED_GRADES = ["A", "B", "C"]
+    SORT_MODE = "closest_mag"
 
     catalog = load_catalog()
     print(f"\nCatalog ready: {len(catalog)} reference stars.\n")
 
     result = select_ref_star(
-        SCIENCE_TARGET, ANALYSIS_START, ANALYSIS_DAYS,
-        band=BAND, contrast=CONTRAST,
+        SCIENCE_TARGET,
+        ANALYSIS_START,
+        ANALYSIS_DAYS,
+        band=BAND,
+        contrast=CONTRAST,
         catalog=catalog,
         allowed_grades=ALLOWED_GRADES,
         sort_mode=SORT_MODE,
@@ -944,23 +982,23 @@ if __name__ == "__main__":
     )
     print(f"Allowed grades : {result.get('allowed_grades')}")
     print(f"Sort mode      : {result.get('sort_mode')}")
-    sci_mag = result.get('sci_mag')
+    sci_mag = result.get("sci_mag")
     print(f"Science mag    : {f'{sci_mag:.2f}' if sci_mag else 'N/A'}")
 
-    if 'error' in result:
+    if "error" in result:
         print(f"ERROR: {result['error']}")
     else:
         print(f"Observable {result['visibility_pct']:.1f}% | {result['sort_method']}")
         print("=" * 60)
-        for i, win in enumerate(result['observable_windows']):
+        for i, win in enumerate(result["observable_windows"]):
             print(
                 f"\nWindow {i + 1}: {win['start']} → {win['end']} "
                 f"({win['duration_days']:.1f} days)"
             )
-            for ref in win['valid_refs']:
-                if ref['mag_diff'] is not None:
+            for ref in win["valid_refs"]:
+                if ref["mag_diff"] is not None:
                     mag_str = f"Δmag={ref['mag_diff']:.2f}"
-                elif ref['mag'] is not None:
+                elif ref["mag"] is not None:
                     mag_str = f"mag={ref['mag']:.2f}"
                 else:
                     mag_str = "mag=N/A"
