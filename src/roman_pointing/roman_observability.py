@@ -383,6 +383,8 @@ def plot_keepout(keepout_dict, ts):
         komap_int,
         cmap=cmap,
         shading="flat",
+        vmin=0,
+        vmax=1,
     )
 
     ax.set_yticks(np.arange(num_targets) + 0.5)
