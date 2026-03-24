@@ -7,3 +7,7 @@ The Notebook RefStarCoverage.ipynb builds upon this tutorial and calculates the 
 The csv file RefStar_S10_amendGrade.csv contains the list of reference stars, their current ranks, and appropriate coordinate, proper motion, parallax, and radial velocity information. The csv is meant to be quickly loaded by the RefStarCoverage notebook so that the user does not have to query information from Simbad or other databases on each reference star.
 
 The Notebook roman_excam_positionangle.ipynb contains a tutorial on computing observatory position angles and North orientation on EXCAM.
+
+The Notebook Roman_SlewTime_Calculator.ipynb is a notebook that contains a tutorial on computing observatory slew times between two targets.
+
+The escv file SlewSettle.ecsv contains calculated slew times in seconds as a function of slew angle in degrees. Sourced from https://science.nasa.gov/mission/roman-space-telescope/observatory-technical/
