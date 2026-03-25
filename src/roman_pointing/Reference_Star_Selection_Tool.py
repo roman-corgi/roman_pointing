@@ -51,9 +51,9 @@ REF_GRADES = ["A", "B", "C"]
 # Star names to skip when building coordinates
 SKIP_NAMES = {"-", "TBD", "?", ""}
 
-SUN_MIN = 54          # degrees — lower solar angle limit for Roman pointing
-SUN_MAX = 126         # degrees — upper solar angle limit for Roman pointing
-MAX_PITCH_DIFF = 5.0  # degrees — default maximum pitch angle difference
+SUN_MIN = 54        
+SUN_MAX = 126         
+MAX_PITCH_DIFF = 5.0  
 
 # I-band magnitude pre-filter. None = disabled by default.
 # Only applied for I-band modes (bands 3 and 4).
@@ -97,10 +97,16 @@ FETCH_COLUMNS = [
     "sy_pmra",
     "sy_pmdec",
     "st_radv",
-    "st_uddv",    # V-band uniform-disk diameter (mas)
-    "st_uddi",    # I-band uniform-disk diameter (mas)
-    "st_uddmeas", # fallback UDD measurement
-    "st_lddmeas", # fallback limb-darkened diameter
+    "st_psfgrade_nfb1_high",   
+    "st_psfgrade_nfb1_med",    
+    "st_psfgrade_specb3_high",
+    "st_psfgrade_specb3_med",  
+    "st_psfgrade_wfb4_high",   
+    "st_psfgrade_wfb4_med",    
+    "st_uddv",
+    "st_uddi",
+    "st_uddmeas",
+    "st_lddmeas",
 ]
 
 # Diameter columns — coerced to float; filled with NaN if absent from server
@@ -370,8 +376,8 @@ def load_catalog(
     """Load the reference star catalog, using a disk cache to avoid repeat fetches.
 
     Cache strategy:
-        1. Fresh cache exists → return it immediately.
-        2. Cache stale or missing → fetch from URL, save, return.
+        1. Fresh cache exists == return it immediately.
+        2. Cache stale or missing fetch from URL, save, return.
         3. Fetch fails but stale cache exists → warn and use stale data.
         4. Fetch fails and no cache → raise RuntimeError.
 
@@ -426,32 +432,67 @@ def load_catalog(
     )
 
 def get_science_mag(sci_name, band, catalog=None, engine=None):
-    """Look up the science target magnitude from the catalog.
-
-    Uses V-band for band 1 / 1w, I-band for band 3 / 4. Returns None if not
-    found, in which case the caller falls back to brightest-first sorting.
-
+    """Look up the science target magnitude from the catalog or corgidb star endpoint.
     Args:
-        sci_name (str): SIMBAD-resolvable target name.
-        band (int or str): Photometric band.
-        catalog (pandas.DataFrame, optional): Loaded reference star catalog.
-        engine: Ignored (kept for backwards compatibility).
+        sci_name (str): SIMBAD-resolvable science target name, e.g. '47 Uma'.
+        band (int or str): Photometric band — 1 (V-band NFB), '1w' (V-band
+            Wide FOV), 3 (I-band Spec), or 4 (I-band Wide FOV).
+        catalog (pandas.DataFrame, optional): Loaded reference star catalog
+            from load_catalog(). If None, the catalog lookup is skipped and
+            fetch_star.php is queried directly.
+        engine: Ignored. Kept for backwards compatibility.
 
     Returns:
-        float or None: Magnitude value, or None if not found.
+        float or None: Magnitude value in the appropriate band, or None if
+            not found in either the catalog or the star endpoint.
     """
     mag_col = "sy_vmag" if band in (1, "1w") else "sy_imag"
     band_label = BAND_LABEL.get(band, "?")
 
+    # 1) Try the ref catalog first (works if science target is also a ref star)
     if catalog is not None:
-        match = catalog[
-            (catalog["main_id"] == sci_name) | (catalog["st_name"] == sci_name)
-        ]
+        sci_norm = sci_name.strip().lower().lstrip("* ")
+        mask = (
+            catalog["main_id"].astype(str).str.strip().str.lstrip("* ").str.lower() == sci_norm
+        ) | (
+            catalog["st_name"].astype(str).str.strip().str.lstrip("* ").str.lower() == sci_norm
+        )
+        match = catalog[mask]
         if not match.empty:
             val = safe_float(match.iloc[0].get(mag_col))
             if val is not None:
-                print(f"  Science target {band_label}-band mag: {val:.2f}")
+                print(f"  Science target {band_label}-band mag: {val:.2f} (from catalog)")
                 return val
+
+    # 2) Fall back to fetch_star.php (the individual-star endpoint)
+    try:
+        import requests, numpy as np, pandas as pd
+        url = "https://corgidb.sioslab.com/fetch_star.php"
+        resp = requests.get(
+            url,
+            headers={"User-Agent": "RomanRefStarPicker/1.0"},
+            params={"st_name": sci_name},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+        if raw:
+            data = np.vstack(raw).transpose()
+            star_cols = [
+                "st_name", "main_id", "ra", "dec", "spectype",
+                "sy_vmag", "sy_imag", "sy_dist", "sy_plx",
+                "sy_pmra", "sy_pmdec", "st_radv",
+            ]
+            df = pd.DataFrame(
+                {name: col for name, col in zip(star_cols, data)}
+            )
+            if not df.empty:
+                val = safe_float(df.iloc[0].get(mag_col))
+                if val is not None:
+                    print(f"  Science target {band_label}-band mag: {val:.2f} (from fetch_star.php)")
+                    return val
+    except Exception as exc:
+        print(f"  Warning: fetch_star.php lookup failed for '{sci_name}': {exc}")
 
     print(f"  Science target {band_label}-band mag not found — will sort brightest-first.")
     return None
@@ -471,7 +512,7 @@ def build_skycoord(star):
 
     Returns:
         astropy.coordinates.SkyCoord: Position in BarycentricMeanEcliptic.
-    """
+    """ 
     def get_field(key, fallback=None):
         raw = star[key] if isinstance(star, dict) else star.get(key, fallback)
         if raw is None or (isinstance(raw, float) and np.isnan(raw)):
