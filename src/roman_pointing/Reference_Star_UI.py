@@ -203,7 +203,7 @@ def plot_keepout_map(ts, keepout_arr, sci_name):
     fig, ax = plt.subplots(figsize=(12, 2.5))
     cmap = matplotlib.colors.ListedColormap(["black", "green"])
     extended = np.append(date_nums, date_nums[-1] + (date_nums[-1] - date_nums[-2]))
-    ax.pcolormesh(extended, [0, 1], keepout_arr.reshape(1, -1).astype(int), cmap=cmap, shading="flat")
+    ax.pcolormesh(extended, [0, 1], keepout_arr.reshape(1, -1).astype(int), cmap=cmap, shading="flat", vmin=0, vmax=1)
 
     transition_indices = np.where(np.diff(keepout_arr.astype(int)) != 0)[0] + 1
     tick_indices = np.unique(np.concatenate(([0], transition_indices, [len(ts) - 1])))
