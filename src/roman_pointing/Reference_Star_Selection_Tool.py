@@ -240,8 +240,7 @@ def get_science_target_coord(sci_name, catalog):
 
     Lookup order:
         1. Loaded catalog (already fetched from CORGI via fetch_refs.php)
-        2. fetch_star.php individual-star endpoint
-        3. SIMBAD via get_target_coords() as a last resort
+        2. SIMBAD via get_target_coords() if not found in CORGI
 
     Args:
         sci_name (str): Science target name.
@@ -266,35 +265,6 @@ def get_science_target_coord(sci_name, catalog):
             return coord
         except Exception as exc:
             print(f"  Warning: could not build coord from catalog for '{sci_name}': {exc}")
-
-    try:
-        resp = requests.get(
-            "https://corgidb.sioslab.com/fetch_star.php",
-            headers={"User-Agent": "RomanRefStarPicker/1.0"},
-            params={"st_name": sci_name},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        raw = resp.json()
-        if raw:
-            data = np.vstack(raw).transpose()
-            star_cols = [
-                "st_name", "main_id", "ra", "dec", "spectype",
-                "sy_vmag", "sy_imag", "sy_dist", "sy_plx",
-                "sy_pmra", "sy_pmdec", "st_radv",
-            ]
-            df = pd.DataFrame({name: col for name, col in zip(star_cols, data)})
-            if not df.empty:
-                for col in ("ra", "dec", "sy_dist", "sy_plx", "sy_pmra", "sy_pmdec", "st_radv"):
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-                try:
-                    coord = build_skycoord(df.iloc[0])
-                    print(f"  Found '{sci_name}' via fetch_star.php.")
-                    return coord
-                except Exception as exc:
-                    print(f"  Warning: could not build coord from fetch_star.php for '{sci_name}': {exc}")
-    except Exception as exc:
-        print(f"  Warning: fetch_star.php lookup failed for '{sci_name}': {exc}")
 
     print(f"  '{sci_name}' not in CORGI — querying SIMBAD...")
     coords = get_target_coords([sci_name])
