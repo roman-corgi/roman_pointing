@@ -145,21 +145,41 @@ def get_ref_star_diameter(ref_row, band):
     return None, None
 
 
-def get_science_target_diameter(sci_name, sci_coord, band):
-    """Query VizieR JSDC v2 for the uniform-disk diameter of the science target.
+def get_science_target_diameter(sci_name, sci_coord, band, catalog=None):
+    """Return uniform-disk diameter for the science target, checking CORGI first.
 
-    Performs a 5 arc-second cone search at the target's ICRS position.
-    Prefers UDDV for V-band modes and UDDI for I-band modes, with a
-    cross-band fallback if the primary value is absent.
+    Performs a CORGI catalog lookup before falling back to a VizieR JSDC v2
+    cone search. Prefers UDDV for V-band modes and UDDI for I-band modes,
+    with a cross-band fallback if the primary value is absent.
 
     Args:
-        sci_name (str): Target name, used only in log messages.
+        sci_name (str): Target name, used for catalog lookup and log messages.
         sci_coord (astropy.coordinates.SkyCoord): Target position.
         band (int or str): Photometric band (1, '1w', 3, or 4).
+        catalog (pandas.DataFrame, optional): Loaded reference star catalog
+            from load_catalog(). When provided, the CORGI catalog is checked
+            before querying VizieR.
 
     Returns:
         tuple: (diameter_mas, source_label), or (None, None) on failure.
     """
+    # Check CORGI catalog first
+    if catalog is not None:
+        sci_norm = sci_name.strip().lower().lstrip("* ")
+        mask = (
+            catalog["main_id"].astype(str).str.strip().str.lstrip("* ").str.lower() == sci_norm
+        ) | (
+            catalog["st_name"].astype(str).str.strip().str.lstrip("* ").str.lower() == sci_norm
+        )
+        match = catalog[mask]
+        if not match.empty:
+            val, col = get_ref_star_diameter(match.iloc[0], band)
+            if val is not None:
+                src = f"{col} (CORGI catalog)"
+                print(f"  Science target diameter: {val:.4f} mas  [{src}]")
+                return val, src
+
+    # Fall back to VizieR JSDC v2
     try:
         from astropy.io.votable import parse_single_table
 
@@ -213,6 +233,72 @@ def get_science_target_diameter(sci_name, sci_coord, band):
     except Exception as exc:
         print(f"  Warning: VizieR query failed for '{sci_name}': {exc} — diameter unavailable.")
         return None, None
+
+
+def get_science_target_coord(sci_name, catalog):
+    """Return a SkyCoord for the science target, checking CORGI before SIMBAD.
+
+    Lookup order:
+        1. Loaded catalog (already fetched from CORGI via fetch_refs.php)
+        2. fetch_star.php individual-star endpoint
+        3. SIMBAD via get_target_coords() as a last resort
+
+    Args:
+        sci_name (str): Science target name.
+        catalog (pandas.DataFrame): Loaded reference star catalog from
+            load_catalog().
+
+    Returns:
+        astropy.coordinates.SkyCoord or None: Target coordinate in
+            BarycentricMeanEcliptic, or None if not found anywhere.
+    """
+    sci_norm = sci_name.strip().lower().lstrip("* ")
+    mask = (
+        catalog["main_id"].astype(str).str.strip().str.lstrip("* ").str.lower() == sci_norm
+    ) | (
+        catalog["st_name"].astype(str).str.strip().str.lstrip("* ").str.lower() == sci_norm
+    )
+    match = catalog[mask]
+    if not match.empty:
+        try:
+            coord = build_skycoord(match.iloc[0])
+            print(f"  Found '{sci_name}' in CORGI catalog.")
+            return coord
+        except Exception as exc:
+            print(f"  Warning: could not build coord from catalog for '{sci_name}': {exc}")
+
+    try:
+        resp = requests.get(
+            "https://corgidb.sioslab.com/fetch_star.php",
+            headers={"User-Agent": "RomanRefStarPicker/1.0"},
+            params={"st_name": sci_name},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+        if raw:
+            data = np.vstack(raw).transpose()
+            star_cols = [
+                "st_name", "main_id", "ra", "dec", "spectype",
+                "sy_vmag", "sy_imag", "sy_dist", "sy_plx",
+                "sy_pmra", "sy_pmdec", "st_radv",
+            ]
+            df = pd.DataFrame({name: col for name, col in zip(star_cols, data)})
+            if not df.empty:
+                for col in ("ra", "dec", "sy_dist", "sy_plx", "sy_pmra", "sy_pmdec", "st_radv"):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                try:
+                    coord = build_skycoord(df.iloc[0])
+                    print(f"  Found '{sci_name}' via fetch_star.php.")
+                    return coord
+                except Exception as exc:
+                    print(f"  Warning: could not build coord from fetch_star.php for '{sci_name}': {exc}")
+    except Exception as exc:
+        print(f"  Warning: fetch_star.php lookup failed for '{sci_name}': {exc}")
+
+    print(f"  '{sci_name}' not in CORGI — querying SIMBAD...")
+    coords = get_target_coords([sci_name])
+    return coords.get(sci_name)
 
 
 def make_sort_key(sort_mode):
@@ -752,18 +838,16 @@ def select_ref_star(
 
     print(f"  Grade filter {active_grades}: {len(candidates)} candidate(s) remaining.")
 
-    print(f"Querying SIMBAD for '{sci_name}'...")
-    coords = get_target_coords([sci_name])
-    if sci_name not in coords:
-        return {"error": f"Science target '{sci_name}' not found in SIMBAD."}
-    sci_coord = coords[sci_name]
-    print(f"  Found '{sci_name}'.")
+    print(f"Querying CORGI for '{sci_name}'...")
+    sci_coord = get_science_target_coord(sci_name, catalog)
+    if sci_coord is None:
+        return {"error": f"Science target '{sci_name}' not found in CORGI or SIMBAD."}
 
     print(f"Looking up {band_label}-band magnitude for '{sci_name}'...")
     sci_mag = get_science_mag(sci_name, band, catalog=catalog)
 
-    print(f"Looking up diameter for '{sci_name}' from VizieR JSDC v2...")
-    sci_diameter, sci_diameter_src = get_science_target_diameter(sci_name, sci_coord, band)
+    print(f"Looking up diameter for '{sci_name}'...")
+    sci_diameter, sci_diameter_src = get_science_target_diameter(sci_name, sci_coord, band, catalog=catalog)
 
     if sort_mode == "closest_mag" and sci_mag is None:
         effective_sort = "brightest"
