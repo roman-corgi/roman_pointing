@@ -126,7 +126,24 @@ class Slewing(object):
 
         return out
 
-    def optimize_refstar_chain(self, starList: list, daystr: str) -> None:
+    def optimize_refstar_chain(self, starList: list, daystr: str) -> tuple:
+        """Minimize the slew time of a series of star observations
+
+        Args:
+            starList (list):
+                List of star names to visit. Must be resolved to main_id.
+            daystr (str):
+                YYYY-MM-DD formatted date string representing start of chain
+
+        Returns:
+            tuple:
+                route (list):
+                    Indices of optimal chain, always starting with 0.
+                slewtimes (list):
+                    Each slew time in seconds (rounded to nearest second). Will be of
+                    size n-1 for n-element starList
+
+        """
 
         self.load_refstars()
 
