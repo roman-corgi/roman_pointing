@@ -228,6 +228,19 @@ def getRomanPositionAngle(B_C_I):
 
 
 def getEXCAMPositionAngle(B_C_I):
+    """Return the EXCAM position angle on sky
+
+    Args:
+        B_C_I (numpy.ndarray(float)):
+            Matrix of spacecraft body-centered unit vectors in the inertial reference
+            frame. Should have dimension 3x3xn where n is the number of time steps.
+            The last axis represents time. Typically computed by calcRomanAngles().
+
+    Returns:
+        astropy.units.Quantity(numpy.ndarray(float)):
+            Array of position angles at each time.
+
+    """
     PA_Z = getRomanPositionAngle(B_C_I)
 
     PA_EXCAM_Y = PA_Z + 150 * u.deg
