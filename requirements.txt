@@ -2,7 +2,7 @@ numpy>=1.20.0
 scipy>=1.7.2
 astropy>=6.0.0
 astroquery>=0.4.8
-angutils>=1.0.0
+angutils>=1.1.0
 ipywidgets
 jupyterlab
 matplotlib
