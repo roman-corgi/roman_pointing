@@ -7,16 +7,24 @@ from scipy.interpolate import make_interp_spline
 import astropy
 import astropy.units as u
 import numpy as np
-from astropy.coordinates import (
-    SkyCoord,
-    Distance,
-    BarycentricMeanEcliptic,
-)
+from astropy.coordinates import SkyCoord, Distance, BarycentricMeanEcliptic, Angle
 from astropy.time import Time
 import requests
 from roman_pointing.roman_pointing import calcRomanAngles, getL2Positions
-from ortools.constraint_solver import routing_enums_pb2
-from ortools.constraint_solver import pywrapcp
+from angutils.angutils import genGreatCircle
+
+try:
+    from ortools.constraint_solver import routing_enums_pb2
+    from ortools.constraint_solver import pywrapcp
+except ModuleNotFoundError:
+    print("ortools could not be imported. Optimization will not work.")
+    print("To fix, run: pip install ortools")
+try:
+    import matplotlib as mpl
+    import matplotlib.pyplot as plt
+except ModuleNotFoundError:
+    print("matplotlib could not be imported. Plotting will not work.")
+    print("To fix, run: pip install matplotlib")
 
 
 class Slewing(object):
@@ -233,3 +241,82 @@ class Slewing(object):
             route.append(manager.IndexToNode(index))
 
         return route[:-1], slewtimes[:-1]
+
+    def plot_refstar_route(self, starList: list, route: list) -> None:
+        """
+
+        Args:
+            starList (list):
+                List of star names to visit. Must be resolved to main_id.
+            route (list):
+                Indices of observations in order. Output from optimize_refstar_chain
+
+
+        """
+
+        # Identify stars and extract coordinates
+        starinds = np.hstack(
+            [np.where(self.refstar_cat["main_id"].values == n)[0] for n in starList]
+        )
+
+        ra = (
+            Angle(self.refstar_cat.iloc[starinds]["ra"].values * u.deg)
+            .wrap_at(180 * u.degree)
+            .rad
+        )
+        dec = Angle(self.refstar_cat.iloc[starinds]["dec"].values * u.deg).rad
+
+        # Generate figure and scatter plot stars
+        fig = plt.figure(figsize=(8, 4))
+        ax = fig.add_subplot(111, projection="mollweide")
+        _ = ax.scatter(ra, dec, zorder=10)
+        ax.grid()
+
+        # plot great circle arcs between all targets in order
+        diffs = np.abs(np.diff(ra[route]))
+        cmap = mpl.colormaps["winter"]
+        for j in range(1, len(route)):
+            c = cmap(round(j / (len(route) - 1) * 255))
+
+            lam = ra[route[j - 1 : j + 1]]
+            phi = dec[route[j - 1 : j + 1]]
+
+            l1, p1 = genGreatCircle(lam, phi)
+
+            lamsort = np.sort(lam)
+
+            inds = (l1 > lamsort[0]) & (l1 < lamsort[1])
+
+            if diffs[j - 1] < np.pi:
+                l2 = l1[inds]
+                p2 = p1[inds]
+                inds2 = np.argsort(l2)
+                plt.plot(l2[inds2], p2[inds2], color=c)
+            else:
+                l2 = l1[~inds]
+                p2 = p1[~inds]
+                inds2 = l2 > 0
+                plt.plot(l2[inds2], p2[inds2], color=c)
+                plt.plot(l2[~inds2], p2[~inds2], color=c)
+
+        # overplot initial and final stars with visit order colors
+        _ = ax.scatter(ra[0], dec[0], c=cmap(0), zorder=11)
+        _ = ax.scatter(ra[route[-1]], dec[route[-1]], c=cmap(255), zorder=11)
+
+        # add colorbar
+        norm = mpl.colors.Normalize(vmin=1, vmax=len(route) - 1)
+        fig.colorbar(
+            mpl.cm.ScalarMappable(norm=norm, cmap=cmap),
+            ax=ax,
+            location="right",
+            label="Observation Number",
+            shrink=0.5,
+        )
+
+        ax.set_xlabel("RA")
+        ax.set_ylabel("DEC")
+        plt.tight_layout()
+
+        print(
+            "Plotting complete.  You may need to run plt.show() for the plot to render"
+        )
