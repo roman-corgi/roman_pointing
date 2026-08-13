@@ -516,7 +516,7 @@ class Slewing(object):
                 plt.plot(l2[~inds2], p2[~inds2], color=c)
 
         # overplot initial and final stars with visit order colors
-        _ = ax.scatter(ra[0], dec[0], c=cmap(0), zorder=11)
+        _ = ax.scatter(ra[route[0]], dec[route[0]], c=cmap(0), zorder=11)
         _ = ax.scatter(ra[route[-1]], dec[route[-1]], c=cmap(255), zorder=11)
 
         # add colorbar
@@ -536,4 +536,3 @@ class Slewing(object):
         print(
             "Plotting complete.  You may need to run plt.show() for the plot to render"
         )
-
