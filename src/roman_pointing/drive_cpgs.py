@@ -32,7 +32,7 @@ def gen_cpgs_driver():
 
 
 def get_for_intervals(targ="eps Eri", driver=None):
-    "Retrieve field of regard intervals (start & end times) from CPGS" ""
+    """Retrieve field of regard intervals (start & end times) from CPGS"""
 
     if driver is None:
         driver = gen_cpgs_driver()
