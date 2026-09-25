@@ -132,6 +132,9 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None):
     B_C_I = np.dstack(
         [np.matmul(rotMat(1, -a), B_C_I[:, :, j]) for j, a in enumerate(ang2)]
     )
+    B_C_I = np.dstack(                                                                        
+        [np.matmul(R_excam, B_C_I[:, :, j]) for j in range(B_C_I.shape[2])]                
+    )
 
     # now we wish to align b_1 to r_star/obs with yaw, pitch, roll (b_3, b_2, b_1)
     # projection of star/obs vector onto b1/e2 plane:
