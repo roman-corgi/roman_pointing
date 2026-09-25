@@ -1,6 +1,7 @@
 import base64
 from io import BytesIO, StringIO
 from datetime import datetime
+from unittest import result
 
 import matplotlib
 import matplotlib.dates as mdates
@@ -256,7 +257,7 @@ def plot_pitch_diff(ts, sci_pitch, result, ref_coords_map, max_pitch_diff=MAX_PI
     return fig_to_html(fig)
 
 
-def availability_html(result):
+def availability_html(result): 
     """Build an HTML availability calendar grid for all observable windows.
 
     Args:
@@ -312,7 +313,7 @@ def availability_html(result):
                 )
                 for name in star_names
             )
-            body_rows += (
+            body_rows += (          
                 f"<tr><td style='padding:4px 8px;border:1px solid #ddd;"
                 f"font-family:monospace;white-space:nowrap'>{date}</td>{cells}</tr>"
             )
@@ -321,6 +322,315 @@ def availability_html(result):
             "<div style='overflow-x:auto;margin-bottom:20px'>"
             "<table style='border-collapse:collapse;font-size:12px'>"
             f"<thead>{header_row}</thead><tbody>{body_rows}</tbody></table></div>"
+        )
+
+    return "".join(sections)
+
+
+def best_ref_per_day_html(result):
+    """
+    Build a daily table showing the highest-ranked reference star
+    available on each date.
+
+    Columns:
+        Date
+        Best Reference Star
+        Grade
+        Delta Pitch (deg)
+    """
+
+    wins = result.get("observable_windows", [])
+
+    if not wins:
+        return "<p style='color:#c62828'>No observable windows found.</p>"
+
+    sections = []
+
+    for i, win in enumerate(wins):
+
+        valid_refs = win.get("valid_refs", [])
+        pitch_df = win.get("pitch_df")
+
+
+
+        if not valid_refs or pitch_df is None or pitch_df.empty:
+            continue
+
+        sections.append(
+            f"<h4 style='margin:16px 0 6px 0;color:#1565c0'>"
+            f"Window {i + 1}: {win['start']} to {win['end']}"
+            f"({win['duration_days']:.1f} days)"
+            f"</h4>"
+        )
+
+        max_pitch = result.get("max_pitch_diff", MAX_PITCH_DIFF)
+        rows = ""
+
+        for date, pitch_row in pitch_df.iterrows():
+
+            best_star  = None
+            best_grade = None
+            best_pitch = None
+
+            for ref in valid_refs:
+
+                star_name = ref["reference_star"]
+
+                if star_name not in pitch_row.index:
+                    continue
+
+                pitch_val = pitch_row[star_name]
+
+                if np.isnan(pitch_val):
+                    continue
+
+                if np.abs(pitch_val) > max_pitch:
+                    continue
+
+                best_star = star_name
+                best_grade = ref.get("grade", "?")
+                best_pitch = pitch_val
+                break
+
+            if best_star is None:
+                continue
+
+            grade_html = html_badge(best_grade, grade_color(best_grade))
+            rows += (
+                "<tr>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"font-family:monospace;white-space:nowrap'>{date}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd'>{best_star}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"text-align:center'>{grade_html}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"text-align:right'>{best_pitch:.3f}&deg;</td>"
+                "</tr>"
+            )
+
+        sections.append(
+            "<div style='overflow-x:auto;margin-bottom:20px'>"
+            "<table style='border-collapse:collapse;font-size:12px'>"
+            "<thead>"
+            "<tr>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Date</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Best Reference Star</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Grade</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Δ Pitch (deg)</th>"
+            "</tr>"
+            "</thead>"
+            f"<tbody>{rows}</tbody>"
+            "</table></div>"
+        )
+
+    return "".join(sections)
+
+
+def best_ref_per_day_html(result):
+    """
+    Build a daily table showing the highest-ranked reference star
+    available on each date.
+
+    Args:
+        result (dict): Return value from select_ref_star.
+
+    Returns:
+        str: HTML table showing the best reference star for each date.
+    """
+
+    wins = result.get("observable_windows", [])
+
+    if not wins:
+        return "<p style='color:#c62828'>No observable windows found.</p>"
+
+    sections = []
+
+    for i, win in enumerate(wins):
+
+        valid_refs = win.get("valid_refs", [])
+        pitch_df = win.get("pitch_df")
+
+
+
+        if not valid_refs or pitch_df is None or pitch_df.empty:
+            continue
+
+        sections.append(
+            f"<h4 style='margin:16px 0 6px 0;color:#1565c0'>"
+            f"Window {i + 1}: {win['start']} to {win['end']} "
+            f"({win['duration_days']:.1f} days)"
+            f"</h4>"
+        )
+
+        max_pitch = result.get("max_pitch_diff", MAX_PITCH_DIFF)
+        rows = ""
+
+        for date, pitch_row in pitch_df.iterrows():
+
+            best_star  = None
+            best_grade = None
+            best_pitch = None
+
+            for ref in valid_refs:
+
+                star_name = ref["reference_star"]
+
+                if star_name not in pitch_row.index:
+                    continue
+
+                pitch_val = pitch_row[star_name]
+
+                if np.isnan(pitch_val):
+                    continue
+
+                if np.abs(pitch_val) > max_pitch:
+                    continue
+
+                best_star = star_name
+                best_grade = ref.get("grade", "?")
+                best_pitch = pitch_val
+                break
+
+            if best_star is None:
+                continue
+
+            grade_html = html_badge(best_grade, grade_color(best_grade))
+            rows += (
+                "<tr>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"font-family:monospace;white-space:nowrap'>{date}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd'>{best_star}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"text-align:center'>{grade_html}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"text-align:right'>{best_pitch:.3f}&deg;</td>"
+                "</tr>"
+            )
+
+        sections.append(
+            "<div style='overflow-x:auto;margin-bottom:20px'>"
+            "<table style='border-collapse:collapse;font-size:12px'>"
+            "<thead>"
+            "<tr>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Date</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Best Reference Star</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Grade</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Δ Pitch (deg)</th>"
+            "</tr>"
+            "</thead>"
+            f"<tbody>{rows}</tbody>"
+            "</table></div>"
+        )
+
+    return "".join(sections)
+
+
+def best_ref_per_day_html(result):
+    """
+    Build a daily table showing the highest-ranked reference star
+    available on each date.
+
+    Args:
+        result (dict): Return value from select_ref_star.
+
+    Returns:
+        str: HTML table showing the best reference star for each date.
+    """
+
+    wins = result.get("observable_windows", [])
+
+    if not wins:
+        return "<p style='color:#c62828'>No observable windows found.</p>"
+
+    sections = []
+
+    for i, win in enumerate(wins):
+
+        valid_refs = win.get("valid_refs", [])
+        pitch_df = win.get("pitch_df")
+
+
+
+        if not valid_refs or pitch_df is None or pitch_df.empty:
+            continue
+
+        sections.append(
+            f"<h4 style='margin:16px 0 6px 0;color:#1565c0'>"
+            f"Window {i + 1}: {win['start']} to {win['end']} "
+            f"({win['duration_days']:.1f} days)"
+            f"</h4>"
+        )
+
+        max_pitch = result.get("max_pitch_diff", MAX_PITCH_DIFF)
+        rows = ""
+
+        for date, pitch_row in pitch_df.iterrows():
+
+            best_star  = None
+            best_grade = None
+            best_pitch = None
+
+            for ref in valid_refs:
+
+                star_name = ref["reference_star"]
+
+                if star_name not in pitch_row.index:
+                    continue
+
+                pitch_val = pitch_row[star_name]
+
+                if np.isnan(pitch_val):
+                    continue
+
+                if np.abs(pitch_val) > max_pitch:
+                    continue
+
+                best_star = star_name
+                best_grade = ref.get("grade", "?")
+                best_pitch = pitch_val
+                break
+
+            if best_star is None:
+                continue
+
+            grade_html = html_badge(best_grade, grade_color(best_grade))
+            rows += (
+                "<tr>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"font-family:monospace;white-space:nowrap'>{date}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd'>{best_star}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"text-align:center'>{grade_html}</td>"
+                f"<td style='padding:4px 8px;border:1px solid #ddd;"
+                f"text-align:right'>{best_pitch:.3f}&deg;</td>"
+                "</tr>"
+            )
+
+        sections.append(
+            "<div style='overflow-x:auto;margin-bottom:20px'>"
+            "<table style='border-collapse:collapse;font-size:12px'>"
+            "<thead>"
+            "<tr>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Date</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Best Reference Star</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Grade</th>"
+            "<th style='padding:5px 8px;border:1px solid #ddd;"
+            "background:#1565c0;color:white'>Δ Pitch (deg)</th>"
+            "</tr>"
+            "</thead>"
+            f"<tbody>{rows}</tbody>"
+            "</table></div>"
         )
 
     return "".join(sections)
@@ -689,7 +999,7 @@ def build_csv_download_widgets(result, sci_name, band, contrast):
     )
 
 
-class ReferenceStarPickerUI:
+class ReferenceStarPickerUI: 
     """Jupyter ipywidgets UI for the Roman Reference Star Picker.
 
     Instantiate and call display() to render the full interface in a notebook.
@@ -832,17 +1142,18 @@ class ReferenceStarPickerUI:
         self.out_pitchdiff = widgets.Output()
         self.out_keepout   = widgets.Output()
         self.out_avail     = widgets.Output()
+        self.out_bestref   = widgets.Output()
         self.out_downloads = widgets.Output()
 
         self.tabs = widgets.Tab(children=[
             self.out_results, self.out_solar, self.out_pitch,
             self.out_pitchdiff, self.out_keepout, self.out_avail,
-            self.out_downloads,
+            self.out_bestref, self.out_downloads,
         ])
         for idx, title in enumerate([
             "Results", "Solar Angle", "Pitch Angle",
             "Pitch Difference", "Keepout Map", "Availability Calendar",
-            "⬇ Downloads",
+            "Best Reference Stars", "⬇ Downloads",
         ]):
             self.tabs.set_title(idx, title)
 
@@ -1116,7 +1427,7 @@ class ReferenceStarPickerUI:
         self.w_run.disabled = True
         for out in [
             self.out_results, self.out_solar, self.out_pitch,
-            self.out_pitchdiff, self.out_keepout, self.out_avail,
+            self.out_pitchdiff, self.out_keepout, self.out_avail, self.out_bestref,
             self.out_downloads,
         ]:
             out.clear_output()
@@ -1222,6 +1533,12 @@ class ReferenceStarPickerUI:
                 display(HTML(html_panel(
                     availability_html(result),
                     title="Reference Star Availability — Valid Observation Dates per Window",
+                )))
+            
+            with self.out_bestref:
+                display(HTML(html_panel(
+                    best_ref_per_day_html(result),
+                    title="Best Reference Star by Date",
                 )))
 
             with self.out_downloads:
