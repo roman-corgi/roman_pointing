@@ -7,6 +7,11 @@ The observatory orientation zero-point is such that the pitch angle will be the 
 
 The Jupyter notebook in the `Notebooks` folder demonstrates how to use these utilities. 
 
+For an analytical derivation of seasonal EXCAM position-angle drift and how it
+uses the ±15° roll allowance over uncertain observing windows, see
+[PA_Z scheduling margins](docs/pa_z_scheduling.md), including reproducible plots
+as a function of target ecliptic latitude and a 14-day window centered on quadrature.
+
 To install the backend, clone or download this repository, navigate to the top-level directory of the repository (the one containing file `pyproject.toml`) and run:
 
 ```
