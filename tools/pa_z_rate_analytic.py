@@ -216,23 +216,28 @@ def pa_swing_in_window(beta, ndays, placement="worst"):
     return np.abs(dtheta[inside]).max()
 
 
-def fixed_pa_window(beta, placement="worst"):
-    """Longest scheduling window (inside the FOR) over which one PA_Z is reachable with ±ROLL_MAX.
+def fixed_pa_window(beta, placement="worst", max_swing=2 * ROLL_MAX):
+    """Longest window (inside the FOR) over which the nominal PA_Z changes by at most max_swing.
+
+    With the default max_swing this is the longest window over which one PA_Z is reachable
+    with ±ROLL_MAX.
 
     Args:
         beta (float):
             Target ecliptic latitude (deg)
         placement (str):
             'worst' or 'quadrature', as in pa_swing_in_window()
+        max_swing (float):
+            Allowed change in nominal PA_Z over the window (deg)
 
     Returns:
         float:
             Window length (days); for |beta| < 54 deg capped by the FOR window length
     """
     best = np.nan
-    for ndays in np.arange(1, 366, 0.5):
+    for ndays in np.arange(0.5, 366, 0.5):
         swing = pa_swing_in_window(beta, ndays, placement)
-        if not swing <= 2 * ROLL_MAX:  # also stops when the window no longer fits (NaN)
+        if not swing <= max_swing:  # also stops when the window no longer fits (NaN)
             break
         best = ndays
     return best
@@ -703,6 +708,251 @@ def plot_geometry_diagram(outdir):
     plt.close(fig)
 
 
+def roll_offset_limits(beta, day_mid, early, late):
+    """Allowed requested roll offsets when CPGS fixes the sky PA at the planned middle of a visit.
+
+    A requested roll offset A becomes an absolute sky PA, P = PA_nom(t_mid) + A. Executing at time t then
+    needs a roll offset A - [PA_nom(t) - PA_nom(t_mid)], which must stay within ±ROLL_MAX from the earliest
+    possible visit start to the latest possible visit end.
+
+    Args:
+        beta (float or numpy.ndarray):
+            Target ecliptic latitude (deg)
+        day_mid (float or numpy.ndarray):
+            Planned middle of the visit, days after solar conjunction
+        early (float):
+            Days from the planned middle back to the earliest possible start (D/2 + allowed early shift)
+        late (float):
+            Days from the planned middle to the latest possible end (D/2 + allowed late shift)
+
+    Returns:
+        tuple:
+            a_min, a_max (deg, PA sense): allowed range of requested roll offsets
+    """
+    day_mid, beta = np.broadcast_arrays(np.asarray(day_mid, dtype=float), np.asarray(beta, dtype=float))
+    t = np.linspace(-early, late, 61).reshape((-1,) + (1,) * day_mid.ndim)
+    s = (pa_from_ecliptic_north(SUN_RATE * (day_mid + t), beta)
+         - pa_from_ecliptic_north(SUN_RATE * day_mid, beta))
+    s = (s + 180) % 360 - 180
+    return -ROLL_MAX + s.max(axis=0), ROLL_MAX + s.min(axis=0)
+
+
+def max_symmetric_roll(beta, halfspan, placement="worst"):
+    """Largest |roll| usable for both signs, for a visit whose span reaches halfspan days either side of mid-visit.
+
+    Args:
+        beta (float):
+            Target ecliptic latitude (deg)
+        halfspan (float):
+            H = D/2 + U: half the visit duration plus the allowed start shift (days)
+        placement (str):
+            'worst' takes the most restrictive mid-visit date with the whole span inside the FOR;
+            'quadrature' puts mid-visit at Delta = 90 deg.
+
+    Returns:
+        float:
+            Maximum requested |roll| (deg); NaN if the span never fits inside the FOR
+    """
+    if placement == "quadrature":
+        days = np.array([90 / SUN_RATE])
+    else:
+        days = np.arange(0, 365.25 / 2, 0.25)
+    lo, hi = roll_offset_limits(beta, days, halfspan, halfspan)
+    inside = np.ones(days.size, dtype=bool)
+    for f in (-halfspan, 0, halfspan):
+        cos_eps = np.cos(np.radians(beta)) * np.cos(np.radians(SUN_RATE * (days + f)))
+        inside &= np.abs(cos_eps) <= np.cos(np.radians(SUN_ANG_MIN)) + 1e-12
+    if not inside.any():
+        return np.nan
+    return np.minimum(hi, -lo)[inside].min()
+
+
+def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
+    """Allowed requested roll offsets for a specific target and visit, using roman_pointing numerics.
+
+    Args:
+        ra (float):
+            Target right ascension (deg, ICRS)
+        dec (float):
+            Target declination (deg, ICRS)
+        start (str):
+            Requested visit start time (ISO format, UTC)
+        duration (float):
+            Visit duration D (days)
+        early (float):
+            Days the start may move earlier than requested
+        late (float):
+            Days the start may move later than requested
+
+    Returns:
+        dict:
+            a_min, a_max (deg, PA sense), beta (deg), Sun angle range (deg), PA_Z rate at mid-visit (deg/day)
+    """
+    t_mid = Time(start, scale="utc") + duration / 2 * u.day
+    dt = np.linspace(-(duration / 2 + early), duration / 2 + late, 241)
+    ts = t_mid + dt * u.day
+    target = SkyCoord(ra=ra * u.deg, dec=dec * u.deg, distance=10 * u.pc, pm_ra_cosdec=0 * u.mas / u.yr,
+                      pm_dec=0 * u.mas / u.yr, radial_velocity=0 * u.km / u.s, frame="icrs",
+                      obstime=Time("J2000")).transform_to(BarycentricMeanEcliptic)
+    sun_ang, _, _, B_C_I = calcRomanAngles(target, ts, getL2Positions(ts))
+    pa = np.degrees(np.unwrap(getRomanPositionAngle(B_C_I).value))
+    s = pa - np.interp(0, dt, pa)
+    return {"a_min": -ROLL_MAX + s.max(), "a_max": ROLL_MAX + s.min(), "beta": target.lat.to_value(u.deg),
+            "sun_ang": (sun_ang.to_value(u.deg).min(), sun_ang.to_value(u.deg).max()),
+            "rate": np.interp(0, dt, np.gradient(pa, dt))}
+
+
+def plot_roll_limits_example(outdir):
+    """Example: needed roll vs. execution time when the sky PA is fixed at the planned mid-visit.
+
+    Args:
+        outdir (str):
+            Output directory
+    """
+    beta, day_mid, duration, buffer = 45.0, 60.0, 2.0, 3.0
+    offsets = {"A": -13.0, "B": +13.0}
+    half = duration / 2
+    t = np.linspace(-half - buffer, half + buffer, 400)
+    s = (pa_from_ecliptic_north(SUN_RATE * (day_mid + t), beta)
+         - pa_from_ecliptic_north(SUN_RATE * day_mid, beta))
+
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(14, 5.8), gridspec_kw={"width_ratios": [1.5, 1]})
+    crossings = []
+    ax.axvspan(-half - buffer, half + buffer, color=KEEPOUT, lw=0, zorder=0)
+    ax.axvspan(-half, half, color=BLUE_RAMP[0], lw=0, zorder=0)
+    ax.text(0, 17.2, f"requested visit\n(D = {duration:.0f} d)", ha="center", fontsize=9, color=INK2)
+    ax.text(-half - buffer + 0.1, 17.2, f"±{buffer:.0f} d buffer\n(earliest start → latest end)",
+            fontsize=9, color=INK2)
+    for x in [-ROLL_MAX, ROLL_MAX]:
+        ax.axhline(x, color=INK, lw=1.2)
+    for (name, off), c in zip(offsets.items(), [SERIES[0], SERIES[1]]):
+        need = off - s
+        ax.plot(t, need, color=c, label=f"roll {name}: requested {off:+.0f}°")
+        bad = np.abs(need) > ROLL_MAX
+        ax.plot(t, np.where(bad, need, np.nan), color=c, lw=5, alpha=0.35, solid_capstyle="butt")
+        k = np.flatnonzero(np.diff(bad.astype(int)) != 0)
+        for j in k:
+            crossings.append(t[j])
+            ax.plot(t[j], need[j], "o", ms=7, color=c, mec=SURFACE, mew=1.2, zorder=5)
+            ax.annotate(f"{t[j]:+.1f} d", (t[j], need[j]), xytext=(0, 10 if off > 0 else -16),
+                        textcoords="offset points", ha="center", fontsize=9, color=INK)
+    early_ok = max([x for x in crossings if x < 0], default=t[0]) + half
+    late_ok = min([x for x in crossings if x > 0], default=t[-1]) - half
+    ax.text(0, 2.5, f"Allowed shift of the start: {early_ok:+.1f} to {late_ok:+.1f} d\n"
+            f"(vs. the ±{buffer:.0f} d buffer)", ha="center", fontsize=10, color=INK,
+            bbox=dict(facecolor=SURFACE, alpha=0.9, lw=0.5, edgecolor=AXIS, pad=4))
+    ax.set_xlim(t[0] - 0.3, t[-1] + 0.3)
+    ax.set_ylim(-19, 19.5)
+    ax.set_xlabel("Execution time relative to the requested mid-visit (days)")
+    ax.set_ylabel("Roll needed to hold the CPGS sky PA (deg, PA sense)")
+    ax.set_title(f"(a) β = {beta:.0f}°, mid-visit {day_mid:.0f} d after conjunction "
+                 f"(|rate| ≈ {abs(pa_z_rate(SUN_RATE * day_mid, beta)):.2f}°/d): thick = beyond ±15°",
+                 fontsize=10.5, loc="left")
+    ax.legend(loc="center right", fontsize=9)
+
+    buffers = np.linspace(0, 3, 61)
+    for dur, c in zip([0.5, 1, 2, 3], [BLUE_RAMP[2], BLUE_RAMP[4], BLUE_RAMP[6], BLUE_RAMP[8]]):
+        lims = [roll_offset_limits(beta, day_mid, dur / 2 + b, dur / 2 + b) for b in buffers]
+        sym = [min(hi, -lo) for lo, hi in lims]
+        ax2.plot(buffers, sym, color=c, label=f"D = {dur:g} d")
+    ax2.axhline(abs(offsets["A"]), color=MUTED, lw=1, ls="--")
+    ax2.text(0.05, abs(offsets["A"]) + 0.15, "requested ±13°", fontsize=8.5, color=INK2)
+    ax2.set_xlim(0, 3)
+    ax2.set_ylim(9, 15.2)
+    ax2.set_xlabel("Allowed shift of the start, ±U (days)")
+    ax2.set_ylabel("Maximum requested |roll| (deg)")
+    ax2.set_title("(b) Same target and date: maximum |roll| vs. buffer\nand visit duration",
+                  fontsize=10.5, loc="left")
+    ax2.legend(loc="lower left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "roll_limits_example.png"), dpi=150)
+    plt.close(fig)
+
+
+def plot_roll_limits_vs_latitude(outdir):
+    """Maximum requested |roll| vs. ecliptic latitude for several half-spans H = D/2 + U.
+
+    Args:
+        outdir (str):
+            Output directory
+    """
+    b_grid = np.arange(0, 90.1, 0.5)
+    halfspans = [1, 2, 3, 4, 5]
+    colors = [BLUE_RAMP[2], BLUE_RAMP[4], BLUE_RAMP[5], BLUE_RAMP[7], BLUE_RAMP[8]]
+
+    fig, axs = plt.subplots(1, 3, figsize=(16, 5.4))
+    for h, c in zip(halfspans, colors):
+        for ax, placement in zip(axs[:2], ["worst", "quadrature"]):
+            ax.plot(b_grid, [max_symmetric_roll(b, h, placement) for b in b_grid], color=c, label=f"H = {h} d")
+    for ax, where in zip(axs[:2], ["(a) worst-case date in the FOR", "(b) mid-visit at quadrature"]):
+        ax.set_ylim(7, 15.3)
+        ax.set_ylabel("Maximum requested |roll| (deg)")
+        ax.set_title(f"{where}\nH = D/2 + U (half visit + allowed start shift)", fontsize=10.5)
+        ax.legend(loc="lower left", fontsize=9)
+
+    sb = np.sin(np.radians(np.maximum(b_grid, 0.01)))
+    rate_worst = np.where(b_grid >= SUN_ANG_MIN, SUN_RATE / sb, SUN_RATE * sb / np.sin(np.radians(SUN_ANG_MIN)) ** 2)
+    axs[2].plot(b_grid, 1 / rate_worst, color=SERIES[1], label="worst-case date (fastest rotation)")
+    axs[2].plot(b_grid, 1 / (SUN_RATE * sb), color=SERIES[0], label="at quadrature")
+    axs[2].set_ylim(0, 6)
+    axs[2].set_ylabel("Days of start-time slack per 1° less |roll|")
+    axs[2].set_title("(c) Slack bought by reducing |roll|: 1/|rate|\n(each 1° buys this many days, "
+                     "split early/late)", fontsize=10.5)
+    axs[2].legend(loc="upper right", fontsize=9)
+    for ax in axs:
+        ax.axvline(SUN_ANG_MIN, color=AXIS, lw=0.8, ls="--", zorder=0)
+        ax.set_xlim(0, 90)
+        ax.set_xticks(np.arange(0, 91, 15))
+        ax.set_xlabel("Ecliptic latitude |β| (deg)")
+    fig.suptitle("Maximum requested roll offset when CPGS fixes the sky PA at mid-visit "
+                 "(|roll| ≤ 15° − |rate| × H)", fontsize=11, color=INK)
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, "roll_limits_vs_latitude.png"), dpi=150)
+    plt.close(fig)
+
+
+def plot_roll_limits_map(outdir):
+    """Map of maximum requested |roll| vs. mid-visit date and ecliptic latitude.
+
+    Args:
+        outdir (str):
+            Output directory
+    """
+    days = np.linspace(0, 365.25 / 2, 367)
+    betas = np.linspace(0, 90, 181)
+    D, B = np.meshgrid(days, betas)
+    cos_for = np.cos(np.radians(SUN_ANG_MIN)) + 1e-12
+    cmap = LinearSegmentedColormap.from_list("blue_seq", BLUE_RAMP[::-1])
+
+    fig, axs = plt.subplots(1, 2, figsize=(14, 5.6), sharey=True)
+    for ax, h in zip(axs, [2, 4]):
+        lo, hi = roll_offset_limits(B, D, h, h)
+        sym = np.minimum(hi, -lo)
+        inside = np.ones(D.shape, dtype=bool)
+        for f in (-h, 0, h):
+            inside &= np.abs(np.cos(np.radians(B)) * np.cos(np.radians(SUN_RATE * (D + f)))) <= cos_for
+        sym = np.where(inside, sym, np.nan)
+        ax.set_facecolor(KEEPOUT)
+        ax.grid(False)
+        cf = ax.contourf(D, B, sym, levels=np.arange(8, 15.01, 0.5), cmap=cmap, extend="min")
+        cs = ax.contour(D, B, sym, levels=[10, 11, 12, 13, 14], colors=INK, linewidths=0.8)
+        for txt in ax.clabel(cs, fmt="%g°", fontsize=8, colors=INK):
+            txt.set_bbox(dict(facecolor=SURFACE, alpha=0.8, lw=0, pad=1))
+        ax.axhline(SUN_ANG_MIN, color=INK, lw=0.8, ls="--")
+        ax.set_xlabel("Requested mid-visit: days after solar conjunction")
+        ax.set_title(f"H = D/2 + U = {h} d  (e.g. D = 2 d with ±{h - 1} d buffer)", fontsize=10.5)
+        ax.text(8, 22, "keep-out", fontsize=9, color=INK2)
+        ax.text(175, 22, "keep-out", fontsize=9, color=INK2, ha="right")
+    axs[0].set_ylabel("Ecliptic latitude |β| (deg)")
+    cb = fig.colorbar(cf, ax=axs, pad=0.02)
+    cb.set_label("Maximum requested |roll| (deg)", color=INK2)
+    cb.outline.set_edgecolor(AXIS)
+    fig.suptitle("Maximum requested roll offset that keeps the CPGS mid-visit PA reachable over the visit and "
+                 "buffer (pattern repeats for days 183–365)", fontsize=11, color=INK)
+    fig.savefig(os.path.join(outdir, "roll_limits_map.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_validation(val, outdir):
     """Plot analytic vs. roman_pointing PA_Z rates over one year.
 
@@ -741,17 +991,47 @@ if __name__ == "__main__":
                                  description="Analytic PA_Z rate model: validation and figures")
     ap.add_argument("-o", "--outdir", default="docs/pa_z_rate_analytic", help="Output directory for figures")
     ap.add_argument("--year", type=int, default=2027, help="Year used for validation against roman_pointing")
+    ap.add_argument("--ra", type=float, help="Roll-limit calculator: target RA (deg, ICRS)")
+    ap.add_argument("--dec", type=float, help="Roll-limit calculator: target Dec (deg, ICRS)")
+    ap.add_argument("--start", type=str, help="Roll-limit calculator: requested visit start (ISO, UTC)")
+    ap.add_argument("--duration", type=float, default=1.0, help="Roll-limit calculator: visit duration (days)")
+    ap.add_argument("--early", type=float, default=0.0, help="Days the start may move earlier than requested")
+    ap.add_argument("--late", type=float, default=0.0, help="Days the start may move later than requested")
     args = ap.parse_args()
-    os.makedirs(args.outdir, exist_ok=True)
 
+    if args.ra is not None:
+        res = roll_limits_for_target(args.ra, args.dec, args.start, args.duration, args.early, args.late)
+        print(f"Target beta = {res['beta']:.2f} deg, Sun angle {res['sun_ang'][0]:.1f}-{res['sun_ang'][1]:.1f} deg, "
+              f"dPA_Z/dt at mid-visit = {res['rate']:+.3f} deg/day")
+        print(f"Allowed requested roll offsets (PA sense): {res['a_min']:+.2f} to {res['a_max']:+.2f} deg; "
+              f"symmetric limit +/-{min(res['a_max'], -res['a_min']):.2f} deg")
+        if res["sun_ang"][0] < SUN_ANG_MIN or res["sun_ang"][1] > SUN_ANG_MAX:
+            print("WARNING: part of the visit span is outside the 54-126 deg field of regard")
+        raise SystemExit
+
+    os.makedirs(args.outdir, exist_ok=True)
     val = validate(args.year)
     plot_validation(val, args.outdir)
     plot_rate_vs_time(args.outdir)
     plot_rate_map(args.outdir)
     plot_latitude_summary(args.outdir)
     plot_geometry_diagram(args.outdir)
+    plot_roll_limits_example(args.outdir)
+    plot_roll_limits_vs_latitude(args.outdir)
+    plot_roll_limits_map(args.outdir)
 
-    # guideline table
+    # guideline table: maximum requested |roll| with the PA fixed at mid-visit, H = D/2 + U
+    print(f"\n{'|beta|':>6} {'rate worst':>10} {'rate quad':>9} | max |roll| worst / quad for H = "
+          f"{'1 d':>13} {'2 d':>13} {'3 d':>13} {'4 d':>13} | {'slack d/deg worst/quad':>22}")
+    for b in [5, 10, 20, 30, 40, 45, 50, 54, 60, 70, 80, 90]:
+        sb = np.sin(np.radians(b))
+        rmax = SUN_RATE / sb if b >= SUN_ANG_MIN else SUN_RATE * sb / np.sin(np.radians(SUN_ANG_MIN)) ** 2
+        cols = [f"{max_symmetric_roll(b, h):5.1f} / {max_symmetric_roll(b, h, 'quadrature'):5.1f}"
+                for h in (1, 2, 3, 4)]
+        print(f"{b:6.0f} {rmax:10.3f} {SUN_RATE * sb:9.3f} | {'':>31}" + " ".join(f"{c:>13}" for c in cols)
+              + f" | {1 / rmax:9.2f} / {1 / (SUN_RATE * sb):<9.2f}")
+
+    # guideline table: fixed PA
     print(f"\n{'|beta|':>6} {'rate quad':>10} {'rate max':>9} {'window d':>9} {'swing':>7} "
           f"{'fixed-PA d (worst/quad)':>24} {'W30 worst':>10} {'W60 worst':>10}")
     for b in [5, 10, 15, 20, 30, 40, 45, 50, 54, 60, 70, 80, 90]:
