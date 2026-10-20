@@ -234,7 +234,7 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
     ax.set_xlim(t_plot[0] - 0.2, t_plot[1] + 0.2)
     ax.set_ylim(-y_lim, y_lim)
     ax.set_xlabel(f"Execution time relative to the planned mid-visit, {t_mid.strftime('%Y-%m-%d %H:%M')} UTC (days)")
-    ax.set_ylabel("Roll needed to hold the CPGS sky PA (deg)")
+    ax.set_ylabel("Actual roll offset relative to nominal attitude (deg)")
     label = name if name else f"RA {ra:.3f}°, Dec {dec:+.3f}°"
     ax.set_title(f"(a) {label} (β = {res['beta']:.1f}°, |rate| ≈ {abs(res['rate']):.2f}°/d): thick = beyond ±15°",
                  fontsize=10.5, loc="left")

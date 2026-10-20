@@ -53,6 +53,7 @@ KEEPOUT = "#f0efec"
 BLUE_RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#2a78d6",
              "#1c5cab", "#184f95", "#104281", "#0d366b"]
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100"]
+PURPLE = "#6250d6"  # Roman observatory in the geometry diagram
 
 plt.rcParams.update({
     "figure.facecolor": SURFACE,
@@ -290,8 +291,8 @@ def plot_geometry_diagram(outdir):
     # lines of sight from Roman
     for p, c, ls in [(K, INK2, "--"), (T, INK, "-"), (S_main, INK, "-")]:
         ax.plot(*np.c_[O, proj(p)], color=c, lw=1.4 if ls == "-" else 1, ls=ls, zorder=2)
-    ax.plot(0, 0, "s", ms=10, color=INK, zorder=6)
-    ax.text(-0.04, -0.05, "Roman (at L2)", fontsize=10.5, color=INK, va="top", ha="right")
+    ax.plot(0, 0, "s", ms=10, color=PURPLE, mec=SURFACE, mew=1.2, zorder=6)
+    ax.text(-0.04, -0.05, "Roman (at L2)", fontsize=10.5, color=PURPLE, va="top", ha="right")
 
     # eps: the angle at Roman between the lines of sight to the target and to the Sun
     pts = np.array([proj(0.45 * p) for p in arc(T, S_main)])
@@ -308,7 +309,7 @@ def plot_geometry_diagram(outdir):
     pts = np.array([proj(p) for p in arc(T, K)])
     ax.plot(pts[:, 0], pts[:, 1], color=MUTED, lw=0.9, ls=":")
 
-    # +Z on the sky at T follows the great circle toward the Sun
+    # +V3 on the sky at T follows the great circle toward the Sun
     pts = np.array([proj(p) for p in arc(T, S_main)])
     ax.plot(pts[:, 0], pts[:, 1], color=SERIES[0], lw=2.2)
     ax.text(*pts[38] + [0.02, 0.09], "great circle\nto the Sun",
@@ -321,7 +322,7 @@ def plot_geometry_diagram(outdir):
     ax.plot(*proj(S_main), "o", ms=13, color=SERIES[3], mec=SURFACE, mew=1.5, zorder=6)
     ax.text(*proj(S_main) + [0.0, -0.06], "Sun (λ☉, 0)", fontsize=10.5, color=INK, ha="center", va="top")
 
-    # at T: ecliptic north and +Z (toward the Sun) on the sky, and the angle theta between them
+    # at T: ecliptic north and +V3 (toward the Sun) on the sky, and the angle theta between them
     pT = proj(T)
     tK, tS = proj(tangent(T, K)), proj(tangent(T, S_main))
     ax.annotate("", xy=pT + 0.22 * tK / np.linalg.norm(tK), xytext=pT,
@@ -330,7 +331,7 @@ def plot_geometry_diagram(outdir):
                 arrowprops=dict(arrowstyle="-|>", color=SERIES[0], lw=2.2))
     ax.text(*(pT + 0.24 * tK / np.linalg.norm(tK)) + [-0.02, 0.02], "ecl. N", color=INK2,
             fontsize=9, ha="right")
-    ax.text(*(pT + 0.27 * tS / np.linalg.norm(tS)) + [0.0, 0.03], "+Z", color=SERIES[0], fontsize=11)
+    ax.text(*(pT + 0.27 * tS / np.linalg.norm(tS)) + [0.0, 0.03], "+V3", color=SERIES[0], fontsize=11)
     a0, a1 = np.arctan2(tK[1], tK[0]), np.arctan2(tS[1], tS[0])
     ang = np.linspace(a0, a1 - 2 * np.pi if a1 - a0 > np.pi else a1, 40)
     ax.plot(pT[0] + 0.1 * np.cos(ang), pT[1] + 0.1 * np.sin(ang), color=INK, lw=1)
@@ -358,7 +359,7 @@ def plot_geometry_diagram(outdir):
 
     ax.text(-1.05, -1.08,
             "ε is the angle at Roman between the lines of sight to the target and the Sun; it equals the\n"
-            "length of the great-circle arc from target to Sun, which sets the +Z direction on the sky.\n"
+            "length of the great-circle arc from target to Sun, which sets the +V3 direction on the sky.\n"
             "As the Sun moves along the ecliptic, only its motion across that arc swings the arc,\n"
             "and seen from the target (a distance ε away) the arc turns at",
             fontsize=10, color=INK2, va="top")
