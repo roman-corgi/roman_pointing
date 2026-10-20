@@ -1,19 +1,27 @@
-# Rate of change of the Roman image orientation (PA_Z) vs. time of year and ecliptic latitude
+# Rate of Roman field rotation (PA_V3) vs. time of year and ecliptic latitude
 
-Analytic model, scheduling guidelines, and validation against `roman_pointing`.
-Figures and numbers come from [`tools/pa_z_rate_analytic.py`](../../tools/pa_z_rate_analytic.py):
+PA_V3 is the position angle of the observatory +Z body axis (V3 in Science Center terminology), the body vector
+normal to the sunshield. It is equivalent to PA_Z, as returned by `getRomanPositionAngle` in `roman_pointing`.
+
+Analytic model, scheduling guidelines, and validation against `roman_pointing`. The model functions are in
+[`roman_pointing.field_rotation`](../../src/roman_pointing/field_rotation.py). Figures and numbers come from two scripts:
+
+* [`tools/field_rotation_rate.py`](../../tools/field_rotation_rate.py): validation, the rate figures, and the
+  fixed-PA table (sections 1–3, 5, 6).
+* [`tools/plan_roll_limits.py`](../../tools/plan_roll_limits.py): allowed roll offsets for a specific target and visit,
+  the roll-limit figures, and the guideline table (section 4).
 
 ```
-PYTHONPATH=src python tools/pa_z_rate_analytic.py -o docs/pa_z_rate_analytic
+PYTHONPATH=src python tools/field_rotation_rate.py -o docs/field_rotation_rate
+PYTHONPATH=src python tools/plan_roll_limits.py --figures -o docs/field_rotation_rate
 ```
 
 ## Summary
 
-For a target at ecliptic latitude β, the nominal-roll position angle PA_Z (and PA_EXCAM_Y = PA_Z + 150°)
-changes at
+For a target at ecliptic latitude β, the nominal-roll position angle PA_V3 changes at
 
 $$
-\boxed{\frac{d\,\mathrm{PA_Z}}{dt} = -\,\dot\lambda_\odot\,\frac{\sin\beta}{\sin^2\varepsilon}
+\boxed{\frac{d\,\mathrm{PA_{V3}}}{dt} = -\,\dot\lambda_\odot\,\frac{\sin\beta}{\sin^2\varepsilon}
 = -\,\dot\lambda_\odot\,\frac{\sin\beta}{1-\cos^2\beta\,\cos^2(\lambda_\odot-\lambda)}}
 \qquad \dot\lambda_\odot \approx 0.9856^\circ/\mathrm{day}
 $$
@@ -23,18 +31,18 @@ PA is measured east of north.
 
 Practical consequences, assuming the 54°–126° Sun-angle field of regard (FOR) and ±15° off-nominal roll:
 
-* **The sign is fixed by the hemisphere.** PA_Z decreases with time for northern-ecliptic targets and increases for
+* **The sign is fixed by the hemisphere.** PA_V3 decreases with time for northern-ecliptic targets and increases for
   southern ones, all year. It never reverses.
 * **The rate depends only on β and ε.** Right ascension, declination, and the equatorial-vs-ecliptic north offset
-  set the absolute PA_Z but not its rate.
+  set the absolute PA_V3 but not its rate.
 * **Within the FOR the rate is bounded:**
   * For |β| < 54°: 0.986 |sin β| ≤ |rate| ≤ 1.51 |sin β| deg/day.
     * The minimum is at quadrature (ε = 90°).
     * The maximum is at the FOR edges (ε = 54° or 126°).
-  * For |β| ≥ 54° (continuous viewing): 0.986 |sin β| ≤ |rate| ≤ 0.986 / |sin β| deg/day. PA_Z turns a full 360° per year.
+  * For |β| ≥ 54° (continuous viewing): 0.986 |sin β| ≤ |rate| ≤ 0.986 / |sin β| deg/day. PA_V3 turns a full 360° per year.
   * The largest rate anywhere in the FOR is **1.22°/day**. It occurs at |β| ≈ 54° at the FOR edge (about 1.26°/day near
     perihelion in early January).
-* **How long a single fixed PA_Z stays reachable with ±15° roll:**
+* **How long a single fixed PA_V3 stays reachable with ±15° roll:**
 
   | Target latitude | Days |
   |---|---|
@@ -47,12 +55,12 @@ Practical consequences, assuming the 54°–126° Sun-angle field of regard (FOR
   CPGS fixes each visit's sky PA at the planned mid-visit. To keep that PA reachable over a visit of duration D, with the
   start allowed to move by ±U days:
 
-  $$ |A|,\ |B| \le 15^\circ - |\mathrm{rate}| \times (D/2 + U) $$
+  $$ |A_\mathrm{nom}|,\ |B_\mathrm{nom}| \le 15^\circ - |\mathrm{rate}| \times (D/2 + U) $$
 
   Each degree of |roll| given up buys 1/|rate| days of start-time slack, about 0.8–1.6 days per degree for
-  |β| ≳ 40°. The script also includes a calculator for a specific target, start date, duration and buffer.
+  |β| ≳ 40°. `tools/plan_roll_limits.py` computes the limits for a specific target, start date, duration and start shift.
 * **Fixed-PA observations** (e.g., slit spectroscopy; [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy)).
-  The roll is adjusted at execution time so that PA_Z stays fixed; ±15° of roll then covers about 30°/|rate| days.
+  The roll is adjusted at execution time so that PA_V3 stays fixed; ±15° of roll then covers about 30°/|rate| days.
 
 ## 1. Geometry and conventions
 
@@ -61,9 +69,10 @@ on the target. After the pitch rotation, +Z is the Sun direction projected onto 
 `getRomanPositionAngle` measures +Z from celestial north about the boresight. Comparing it with astropy's
 `position_angle` confirms the sense is the standard **east of north**.
 
-So **PA_Z is the position angle of the Sun as seen from the target**. EXCAM differs only by a constant:
-`getEXCAMPositionAngle` returns PA_EXCAM_Y = PA_Z + 150°. Roll about +X (`applyRollAngle`) shifts PA_Z one-for-one;
-+10° of roll gives −10.000° in PA_Z. Neither offset changes the rate, so everything below applies equally to PA_Z,
+So **PA_V3 is the position angle of the Sun as seen from the target**. EXCAM differs only by a constant:
+PA_EXCAM_Y ≈ PA_V3 + 150°. `getEXCAMPositionAngle` uses a nominal 150° offset, which will be replaced by a calibrated
+value from the SIAF reference file. Roll about +X (`applyRollAngle`) shifts PA_V3 one-for-one;
++10° of roll gives −10.000° in PA_V3. Neither offset changes the rate, so everything below applies equally to PA_V3,
 PA_EXCAM_Y, and any rolled attitude.
 
 ## 2. Derivation
@@ -98,14 +107,14 @@ $$ \frac{d\theta}{d\Delta} = \frac{x\,y' - y\,x'}{x^2+y^2}
 = \frac{-\sin\beta}{1-\cos^2\beta\cos^2\Delta} = -\frac{\sin\beta}{\sin^2\varepsilon}. $$
 
 For a fixed target, dΔ/dt = λ̇☉. The PA of ecliptic north measured from celestial north, η(λ, β), is constant in time,
-so PA_Z = θ + η:
+so PA_V3 = θ + η:
 
-$$ \frac{d\,\mathrm{PA_Z}}{dt} = -\dot\lambda_\odot\,\frac{\sin\beta}{\sin^2\varepsilon}. $$
+$$ \frac{d\,\mathrm{PA_{V3}}}{dt} = -\dot\lambda_\odot\,\frac{\sin\beta}{\sin^2\varepsilon}. $$
 
 If the absolute PA is needed: with obliquity ι = 23.44°,
 η = −atan2(sin ι cos λ, cos β cos ι − sin β sin ι sin λ). This reproduces `getRomanPositionAngle` to < 0.005°.
 
-**Geometric reading** ([diagram](pa_z_rate_geometry_diagram.png), panel a):
+**Geometric reading** ([diagram](pa_v3_rate_geometry_diagram.png), panel a):
 
 1. The Sun moves along the ecliptic at λ̇☉. Only the part of its motion across the T–☉ arc rotates that arc.
 2. In the triangle, the angle ψ at ☉ satisfies cos ψ = sin β / sin ε. So the cross-arc speed is λ̇☉ sin β / sin ε.
@@ -122,123 +131,132 @@ other is the lever arm. Their product gives the 1/sin²ε dependence.
 
 With a circular Earth orbit:
 
-$$ \lambda_\odot(d) \approx 280.46^\circ + 0.98565^\circ\,(d-1), \qquad d = \text{day of year} $$
+$$ \lambda_\odot(d) \approx \lambda_0 + 0.98561^\circ\,(d-1), \qquad d = \text{day of year} $$
 
-$$ \frac{d\,\mathrm{PA_Z}}{dt}(d;\lambda,\beta) = -0.98565^\circ\,\mathrm{day^{-1}}\;
+Here λ₀ is the Sun's mean ecliptic longitude at Jan 1 0h UTC of the year, referred to the J2000 ecliptic and equinox
+used by `roman_pointing`: 280.30° in 2026, 280.05° in 2027, and 279.80° in 2028. `sun_longitude_doy` computes it from
+the IERS 2003 mean longitude of the Earth (`erfa.fae03`) plus 180°. The rate formula below uses the nominal
+0.98565°/day; the 0.004% difference is negligible.
+
+$$ \frac{d\,\mathrm{PA_{V3}}}{dt}(d;\lambda,\beta) = -0.98565^\circ\,\mathrm{day^{-1}}\;
 \frac{\sin\beta}{1-\cos^2\beta\,\cos^2\!\big(\lambda_\odot(d)-\lambda\big)} $$
 
 * **Timing by λ.** Target longitude only sets when the pattern occurs. Solar conjunction (Δ = 0) falls on day
-  d ≈ 1 + (λ − 280.46°)/0.98565 (mod 365.25). The pattern repeats every half year, because the rate is symmetric in
+  d ≈ 1 + (λ − λ₀)/0.98561 (mod 365.25). The pattern repeats every half year, because the rate is symmetric in
   Δ → 180° − Δ and Δ → Δ + 180°.
 * **Eccentricity.** It changes λ̇☉ by ±3.4%: 1.019°/day in early January, 0.953°/day in early July. It also shifts
-  λ☉ by up to ~2° (~2 days). These are the only significant errors of the circular model.
+  λ☉ from its mean value by up to ±1.9° (~2 days), the equation of center.
 
-### Closed-form results for one FOR window (|β| < 54°)
-
-The target enters the FOR at ε = 54° and exits at ε = 126° (or the reverse). In terms of Δ, the window runs from
-Δ₁ = arccos(cos 54° / cos β) to 180° − Δ₁:
-
-$$ \text{duration} = \frac{180^\circ - 2\Delta_1}{\dot\lambda_\odot}, \qquad
-|\Delta\mathrm{PA_Z}|_\text{window} = 2\arctan\!\left(\frac{|\sin\beta|\cos 54^\circ}{\sqrt{\cos^2\beta-\cos^2 54^\circ}}\right). $$
-
-For any interval, ΔPA_Z = θ(Δ(t₂)) − θ(Δ(t₁)) exactly, with θ = atan2(sin Δ, −sin β cos Δ).
+Eccentricity is the only significant error of the circular model; it does not affect the rate formula in terms of ε.
 
 ## 3. Figures
 
-**[pa_z_rate_geometry_diagram.png](pa_z_rate_geometry_diagram.png)**: the requested diagram.
+**[pa_v3_rate_geometry_diagram.png](pa_v3_rate_geometry_diagram.png)**:
 
-* (a) 3D geometry with Roman at the center of the celestial sphere, using the example β = 45°, Δ = 60°, ε = 69°.
+* (a) Roman at the center of the celestial sphere, using the example β = 45°, Δ = 60°, ε = 69°.
   * Lines of sight run from Roman to the target and to the Sun. ε is the shaded angle between them at Roman.
   * β is measured along the target's meridian, and Δ along the ecliptic.
   * The great circle from the target to the Sun sets +Z on the sky, and θ is +Z measured from ecliptic north.
   * At the Sun, its motion along the ecliptic is shown together with the part that crosses the target–Sun arc.
 * (b) |rate| as a function of Sun angle ε and ecliptic latitude, with the FOR marked. Each target moves along a
   horizontal line between ε = |β| and 180° − |β| every half year.
-* (c) The +Z direction every 5 days for 60 days around quadrature at β = 10°, 35°, and 70°, against the ±15° roll wedge.
 
-![diagram](pa_z_rate_geometry_diagram.png)
+![diagram](pa_v3_rate_geometry_diagram.png)
 
-**[pa_z_rate_vs_time.png](pa_z_rate_vs_time.png)**: |rate| through the year vs. days after solar conjunction for
-several β, with solid lines in the FOR. The right panel shows accumulated PA_Z change relative to quadrature, against
-the ±15° roll band.
+**[pa_v3_rate_vs_time.png](pa_v3_rate_vs_time.png)**: |rate| through the year vs. days after solar conjunction for
+several β, with solid lines in the FOR.
 
-![vs time](pa_z_rate_vs_time.png)
+![vs time](pa_v3_rate_vs_time.png)
 
-**[pa_z_rate_map.png](pa_z_rate_map.png)**: |rate| vs. days after conjunction and |β| within the FOR. Each contour is
-labeled with its rate and the number of days a fixed PA_Z stays within ±15° at that rate (30°/rate).
+**[pa_v3_rate_map.png](pa_v3_rate_map.png)**: |rate| vs. days after conjunction and |β| within the FOR. Each contour is
+labeled with its rate and the number of days a fixed PA_V3 stays within ±15° at that rate (30°/rate).
 
-![map](pa_z_rate_map.png)
-
-**[pa_z_rate_vs_latitude.png](pa_z_rate_vs_latitude.png)**: summary vs. |β|:
-
-* (a) Minimum, mean, and maximum in-FOR rate.
-* (b) FOR window length.
-* (c) PA_Z rotation across a window.
-* (d) Longest window over which a single PA_Z is reachable with ±15° roll.
-* (e, f) For fixed-PA observations ([section 5](#5-fixed-pa-observations-eg-slit-spectroscopy)): the minimum
-  constraint range width for 14-, 30-, 60-, and 90-day windows. Panel (e) uses the worst placement in the FOR; panel (f)
-  centres the window on quadrature.
-
-![vs latitude](pa_z_rate_vs_latitude.png)
+![map](pa_v3_rate_map.png)
 
 ## 4. Maximum roll offsets when CPGS fixes the PA at mid-visit
 
 ### The problem
 
-The observer requests a start date and two roll offsets, A and B. For each visit, CPGS converts the request into an
-absolute sky PA computed for the planned middle of the visit:
+The observer requests a start date and two roll offsets, A_nom and B_nom. Roll offsets follow the `roman_pointing`
+convention: a roll of +A_nom passed to `applyRollAngle` changes PA_V3 (and PA_EXCAM_Y) by −A_nom. For each visit, CPGS
+converts the request into an absolute sky PA computed for the planned middle of the visit:
 
-$$ P_A = \mathrm{PA_{nom}}(t_\mathrm{mid}) + A $$
+$$ P_A = \mathrm{PA_{nom}}(t_\mathrm{mid}) - A_\mathrm{nom} $$
 
 The spacecraft then holds that PA. The nominal PA keeps rotating, so the roll actually needed at execution time t is
 
-$$ A_\mathrm{eff}(t) = A - \big[\mathrm{PA_{nom}}(t) - \mathrm{PA_{nom}}(t_\mathrm{mid})\big] $$
+$$ A(t) = A_\mathrm{nom} + \big[\mathrm{PA_{nom}}(t) - \mathrm{PA_{nom}}(t_\mathrm{mid})\big] $$
 
 That needed roll must stay within ±15° over the whole interval in which the visit might execute:
 
 * **The visit itself** reaches D/2 on either side of mid-visit, where D is the visit duration.
-* **Any start shift** the schedulers may need adds U days on top of that, for example within the 2–3 day buffer of
-  the visibility windows.
+* **Any start shift** the schedulers may need adds U days on top of that, for example within a 3 day scheduling buffer.
 
-Long visits, rolls requested near ±15°, and fast-rotating targets push A_eff past the limit. The visit then has only a
+Long visits, rolls requested near ±15°, and fast-rotating targets push A(t) past the limit. The visit then has only a
 narrow range of legal start times.
 
 ### Guideline formula
 
 Let H = D/2 + U be the farthest the visit can execute from the planned mid-visit. To first order:
 
-$$ \boxed{|A|,\ |B| \;\le\; 15^\circ - |\mathrm{rate}| \times \left(\tfrac{D}{2} + U\right)} $$
+$$ \boxed{|A_\mathrm{nom}|,\ |B_\mathrm{nom}| \;\le\; 15^\circ - |\mathrm{rate}| \times \left(\tfrac{D}{2} + U\right)} $$
 
 Inverting it, for given rolls the start time can move by up to
 
-$$ U_\mathrm{max} = \frac{15^\circ - \max(|A|, |B|)}{|\mathrm{rate}|} - \frac{D}{2}. $$
+$$ U_\mathrm{max} = \frac{15^\circ - \max(|A_\mathrm{nom}|, |B_\mathrm{nom}|)}{|\mathrm{rate}|} - \frac{D}{2}. $$
 
 Here |rate| = λ̇☉ |sin β| / sin²ε from section 2, evaluated at the requested date. Use the largest value over the
-span for a conservative limit, and add ~3% in December–January. The script evaluates the exact version with θ(Δ).
+span for a conservative limit, and add ~3% in December–January. `tools/plan_roll_limits.py` evaluates the exact version.
 
 * **Each degree of |roll| given up buys 1/|rate| days of start-time slack**, shared between early and late. That is
   about 1 day per degree at the ecliptic poles, 0.8 days per degree in the worst case near |β| ≈ 54°, and several
   days per degree near the ecliptic.
-* **The two rolls limit different sides.** In the PA sense, a northern-ecliptic target (β > 0) has PA_Z decreasing.
-  Running early pushes a negative offset further negative, and running late pushes a positive offset further positive.
-  So for β > 0:
-  * the negative-offset roll limits how early the visit can run, and
-  * the positive-offset roll limits how late it can run.
+* **The two rolls limit different sides.** For a northern-ecliptic target (β > 0), PA_V3 decreases with time, and so
+  does the needed roll A(t). Running late pushes a negative roll further negative, and running early pushes a positive
+  roll further positive. So for β > 0:
+  * the negative roll limits how late the visit can run, and
+  * the positive roll limits how early it can run.
 
   The roles swap for β < 0. If the buffer is one-sided, only one roll needs the reduced limit; the other can go to
   15° − |rate| × D/2.
-* **Sign convention.** Offsets here are in the PA sense: +A rotates PA_Z by +A. In `roman_pointing`, a roll of +r passed
-  to `applyRollAngle` changes PA_Z by −r. The magnitude limits are the same in either convention.
 
 ### Worked example
 
-([roll_limits_example.png](roll_limits_example.png).) Take β = 45°, mid-visit 60 days after solar conjunction
-(|rate| ≈ 0.80°/day), D = 2 days, and requested rolls of ±13°.
+**Constraints.**
 
-* **Legal start times.** The needed roll reaches −15° at 2.5 days before mid-visit and +15° at 2.5 days after. The visit
-  start can therefore move by only ±1.5 days, against a ±3 day buffer.
-* **What fits the full buffer.** Holding the full ±3 day buffer (H = 4 days) requires |roll| ≤ 11.7°.
-* **Shorter visit.** A 0.5-day visit with the same ±3 day buffer allows |roll| ≤ 12.4°.
+* Target: ε Eridani (RA 53.233°, Dec −9.458°; β = −27.7°).
+* Visit duration D = 1.5 days (conservative), planned to start 2027-01-19 00:00 UTC, so CPGS sets the sky PA for the
+  planned mid-visit at 2027-01-19 18:00 UTC.
+* The start may move up to 3 days early or late (U = 3 days, H = D/2 + U = 3.75 days). The visit can therefore start
+  anywhere in the Jan 16–22 scheduling window (Jan 16 00:00 to Jan 22 00:00 UTC) and may end as late as Jan 23 12:00.
+* Over that span the Sun angle is 103.5°–110.2° and PA_V3 increases at ≈ 0.52°/day.
+
+**Allowed roll offsets.** The calculator evaluates the constraints with `roman_pointing` and the solar ephemeris:
+
+```
+PYTHONPATH=src python tools/plan_roll_limits.py --ra 53.2327 --dec -9.4583 \
+    --start 2027-01-19T00:00:00 --duration 1.5 --early 3 --late 3
+```
+
+```
+Target beta = -27.72 deg, Sun angle 103.5-110.2 deg, dPA_V3/dt at mid-visit = +0.517 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -13.02 to +13.09 deg; symmetric limit +/-13.02 deg
+```
+
+**Reading the plot** ([roll_limits_example.png](roll_limits_example.png)):
+
+* **Panel (a)** plots the roll needed to hold the CPGS sky PA against the actual execution time. A requested roll is
+  allowed only if its line stays within ±15° across the whole possible execution span (gray band).
+  * The lines slope upward because PA_V3 increases for β < 0.
+  * The dashed lines are the limiting rolls. The −13.02° roll reaches −15° at the start of the span (earliest start),
+    and the +13.09° roll reaches +15° at its end (latest end). So the negative roll is limited by running early, and
+    the positive roll by running late.
+  * The thin lines at ±13° (rolls A and B) are an illustration. They lie just inside the limits, reaching ±15° at
+    3.8 days before and 3.9 days after mid-visit, just outside the 3.75-day span.
+* **Panel (b)** shows the symmetric limit vs. allowed start shift U for several visit durations. D = 1.5 days with
+  U = 3 days gives ±13.02°. Each extra day of U costs about 0.52° of roll, and each extra day of D about 0.26°.
+* **One-sided shift.** If the start can only slip later (`--early 0 --late 3`), the negative roll is limited only by
+  the visit length, and the allowed range widens to −14.61° to +13.09°.
 
 ![roll limits example](roll_limits_example.png)
 
@@ -285,30 +303,31 @@ conjunction) and |β|, for H = 2 and 4 days.
 
 ### Calculator for a specific target
 
-The script can compute the allowed offsets for one target and visit directly with `roman_pointing`, using the actual
-solar ephemeris:
+`tools/plan_roll_limits.py` computes the allowed offsets for one target and visit directly with `roman_pointing`,
+using the actual solar ephemeris:
 
 ```
-PYTHONPATH=src python tools/pa_z_rate_analytic.py --ra 108.949 --dec 67.783 \
+PYTHONPATH=src python tools/plan_roll_limits.py --ra 108.949 --dec 67.783 \
     --start 2027-03-01T00:00:00 --duration 2 --early 3 --late 3
 ```
 
 ```
-Target beta = 45.00 deg, Sun angle 107.5-112.8 deg, dPA_Z/dt at mid-visit = -0.806 deg/day
-Allowed requested roll offsets (PA sense): -11.72 to +11.83 deg; symmetric limit +/-11.72 deg
+Target beta = 45.00 deg, Sun angle 107.5-112.8 deg, dPA_V3/dt at mid-visit = -0.806 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -11.83 to +11.72 deg; symmetric limit +/-11.72 deg
 ```
 
-With `--early 0 --late 3` (start can only slip later), the negative roll is limited only by the visit length: −14.19° to
-+11.83°. The calculator warns if any part of the span falls outside the field of regard. It agrees with the analytic
-limits to within 0.03°.
+With `--early 0 --late 3` (start can only slip later), the positive roll is limited only by the visit length: −11.83° to
++14.19°. The calculator warns if any part of the span falls outside the field of regard. It agrees with the analytic
+limits to within 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
+same inputs; `-o` sets the output directory (default: current directory).
 
 ## 5. Fixed-PA observations (e.g., slit spectroscopy)
 
-Here the roll is chosen at execution time so that PA_Z lands in a required sky range, rather than holding a fixed
+Here the roll is chosen at execution time so that PA_V3 lands in a required sky range, rather than holding a fixed
 offset. Definitions:
 
-* **Constraint range [PA_lo, PA_hi]:** the sky PA_Z values the program accepts, of width W_c = PA_hi − PA_lo.
-* **PA_start, PA_end:** the nominal PA_Z on the earliest and latest possible execution dates. These differ by ΔPA(T),
+* **Constraint range [PA_lo, PA_hi]:** the sky PA_V3 values the program accepts, of width W_c = PA_hi − PA_lo.
+* **PA_start, PA_end:** the nominal PA_V3 on the earliest and latest possible execution dates. These differ by ΔPA(T),
   where T is the length of the window in which the visit may fall.
 * On any date t, roll can reach [PA_nom(t) − 15°, PA_nom(t) + 15°].
 
@@ -363,17 +382,18 @@ How to read these:
 
 ## 6. Validation against `roman_pointing`
 
-`validate()` in the script compares the model with `calcRomanAngles` + `getRomanPositionAngle` for 2027. It uses seven
+`validate()` in `tools/field_rotation_rate.py` compares the model with `calcRomanAngles` + `getRomanPositionAngle` for 2027. It uses seven
 synthetic targets with β from −80° to +85° at various longitudes, sampled every 0.5 day, and keeps only in-FOR times.
 
 | Check | Result |
 |---|---|
-| Absolute PA_Z (θ + η, ephemeris solar longitude) | ≤ 0.0043° |
+| Absolute PA_V3 (θ + η, ephemeris solar longitude) | ≤ 0.0043° |
 | Rate, ephemeris solar longitude (tests the geometry) | ≤ 0.002 °/day |
-| Rate, circular-orbit model vs. day of year | ≤ 0.037 °/day (≤ 3.4%, from eccentricity) |
+| Rate, circular-orbit model vs. day of year | ≤ 0.036 °/day (≤ 3.4%, from eccentricity) |
+| Solar longitude, circular-orbit model vs. ephemeris | −1.91° to +1.92° (equation of center) |
 | PA sense vs. astropy `position_angle` of the Sun | 0.0000° difference (east of north confirmed) |
 
-![validation](pa_z_rate_validation.png)
+![validation](pa_v3_rate_validation.png)
 
 ## 7. Assumptions and limitations
 
