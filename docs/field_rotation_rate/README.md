@@ -7,9 +7,9 @@ Analytic model, scheduling guidelines, and validation against `roman_pointing`. 
 [`roman_pointing.field_rotation`](../../src/roman_pointing/field_rotation.py). Figures and numbers come from two scripts:
 
 * [`tools/field_rotation_rate.py`](../../tools/field_rotation_rate.py): validation, the rate figures, and the
-  fixed-PA table (sections 1–3, 5, 6).
-* [`tools/plan_roll_limits.py`](../../tools/plan_roll_limits.py): allowed roll offsets for a specific target and visit,
-  the roll-limit figures, and the guideline table (section 4).
+  fixed-PA tables (sections 1–3, 5, 6).
+* [`tools/plan_roll_limits.py`](../../tools/plan_roll_limits.py): allowed roll offsets and reachable fixed sky PAs for a
+  specific target and visit, the roll-limit figures, and the roll guideline table (sections 4 and 5).
 
 ```
 PYTHONPATH=src python tools/field_rotation_rate.py -o docs/field_rotation_rate
@@ -52,7 +52,7 @@ Practical consequences, assuming the 54°–126° Sun-angle field of regard (FOR
   | \|β\| ≈ 54° (worst case) | 24.5 |
   | Ecliptic poles | 30 |
 * **Maximum requested roll offsets** ([section 4](#4-maximum-roll-offsets-when-cpgs-fixes-the-pa-at-mid-visit)).
-  CPGS fixes each visit's sky PA at the planned mid-visit. To keep that PA reachable over a visit of duration D, with the
+  CPGS fixes each visit's sky PAs at the planned mid-visit. To keep that PA reachable over a visit of duration D, with the
   start allowed to move by ±U days:
 
   $$ |A_\mathrm{nom}|,\ |B_\mathrm{nom}| \le 15^\circ - |\mathrm{rate}| \times (D/2 + U) $$
@@ -60,7 +60,9 @@ Practical consequences, assuming the 54°–126° Sun-angle field of regard (FOR
   Each degree of |roll| given up buys 1/|rate| days of start-time slack, about 0.8–1.6 days per degree for
   |β| ≳ 40°. `tools/plan_roll_limits.py` computes the limits for a specific target, start date, duration and start shift.
 * **Fixed-PA observations** (e.g., slit spectroscopy; [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy)).
-  The roll is adjusted at execution time so that PA_V3 stays fixed; ±15° of roll then covers about 30°/|rate| days.
+  The observer specifies two exact sky PAs, observed alternately within one visit. Both must stay reachable with ±15° of
+  roll over the visit's possible execution span T, so they can be at most 30° − ΔPA(T) ≈ 30° − |rate| × T apart.
+  `tools/plan_roll_limits.py` gives the reachable interval, whose ends are the maximum-separation pair.
 
 ## 1. Geometry and conventions
 
@@ -70,10 +72,10 @@ on the target. After the pitch rotation, +Z is the Sun direction projected onto 
 `position_angle` confirms the sense is the standard **east of north**.
 
 So **PA_V3 is the position angle of the Sun as seen from the target**. EXCAM differs only by a constant:
-PA_EXCAM_Y ≈ PA_V3 + 150°. `getEXCAMPositionAngle` uses a nominal 150° offset, which will be replaced by a calibrated
+PA_APER ≈ PA_V3 + 150°. `getEXCAMPositionAngle` uses a nominal 150° offset, which will be replaced by a calibrated
 value from the SIAF reference file. Roll about +X (`applyRollAngle`) shifts PA_V3 one-for-one;
 +10° of roll gives −10.000° in PA_V3. Neither offset changes the rate, so everything below applies equally to PA_V3,
-PA_EXCAM_Y, and any rolled attitude.
+PA_APER, and any rolled attitude.
 
 ## 2. Derivation
 
@@ -177,11 +179,12 @@ labeled with its rate and the number of days a fixed PA_V3 stays within ±15° a
 
 ### The problem
 
-The observer requests a start date and two roll offsets, A_nom and B_nom. Roll offsets follow the `roman_pointing`
-convention: a roll of +A_nom passed to `applyRollAngle` changes PA_V3 (and PA_EXCAM_Y) by −A_nom. For each visit, CPGS
-converts the request into an absolute sky PA computed for the planned middle of the visit:
+The observer requests a start date and two roll offsets, A_nom and B_nom. One visit contains several repetitions of
+both rolls, in alternating sequence. Roll offsets follow the `roman_pointing` convention: a roll of +A_nom passed to
+`applyRollAngle` changes PA_V3 (and PA_APER) by −A_nom. CPGS converts each requested roll into an absolute sky PA
+computed for the planned middle of the visit:
 
-$$ P_A = \mathrm{PA_{nom}}(t_\mathrm{mid}) - A_\mathrm{nom} $$
+$$ P_A = \mathrm{PA_{nom}}(t_\mathrm{mid}) - A_\mathrm{nom}, \qquad P_B = \mathrm{PA_{nom}}(t_\mathrm{mid}) - B_\mathrm{nom} $$
 
 The spacecraft then holds that PA. The nominal PA keeps rotating, so the roll actually needed at execution time t is
 
@@ -224,7 +227,8 @@ span for a conservative limit, and add ~3% in December–January. `tools/plan_ro
 
 **Constraints.**
 
-* Target: ε Eridani (RA 53.233°, Dec −9.458°; β = −27.7°).
+* Target: ε Eridani, resolved by name with `--target "eps Eri"` (found in CORGIDB): RA 53.228°, Dec −9.458°
+  (β = −27.7°).
 * Visit duration D = 1.5 days (conservative), planned to start 2027-01-19 00:00 UTC, so CPGS sets the sky PA for the
   planned mid-visit at 2027-01-19 18:00 UTC.
 * The start may move up to 3 days early or late (U = 3 days, H = D/2 + U = 3.75 days). The visit can therefore start
@@ -234,14 +238,19 @@ span for a conservative limit, and add ~3% in December–January. `tools/plan_ro
 **Allowed roll offsets.** The calculator evaluates the constraints with `roman_pointing` and the solar ephemeris:
 
 ```
-PYTHONPATH=src python tools/plan_roll_limits.py --ra 53.2327 --dec -9.4583 \
+PYTHONPATH=src python tools/plan_roll_limits.py --target "eps Eri" \
     --start 2027-01-19T00:00:00 --duration 1.5 --early 3 --late 3
 ```
 
 ```
-Target beta = -27.72 deg, Sun angle 103.5-110.2 deg, dPA_V3/dt at mid-visit = +0.517 deg/day
-Allowed requested roll offsets (applyRollAngle sense): -13.02 to +13.09 deg; symmetric limit +/-13.02 deg
+  Found 'eps Eri' in CORGIDB (StarAliases lookup).
+Target eps Eri: RA 53.2284 deg, Dec -9.4582 deg (ICRS, J2000)
+Target beta = -27.71 deg, Sun angle 103.5-110.2 deg, dPA_V3/dt at mid-visit = +0.517 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -13.02 to +13.10 deg; symmetric limit +/-13.02 deg
+Reachable fixed sky PA_V3 over the span: 232.15 to 258.27 deg; maximum-separation pair 232.15 and 258.27 deg (separation 26.12 deg)
 ```
+
+The last line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy).
 
 **Reading the plot** ([roll_limits_example.png](roll_limits_example.png)):
 
@@ -249,14 +258,14 @@ Allowed requested roll offsets (applyRollAngle sense): -13.02 to +13.09 deg; sym
   allowed only if its line stays within ±15° across the whole possible execution span (gray band).
   * The lines slope upward because PA_V3 increases for β < 0.
   * The dashed lines are the limiting rolls. The −13.02° roll reaches −15° at the start of the span (earliest start),
-    and the +13.09° roll reaches +15° at its end (latest end). So the negative roll is limited by running early, and
+    and the +13.10° roll reaches +15° at its end (latest end). So the negative roll is limited by running early, and
     the positive roll by running late.
   * The thin lines at ±13° (rolls A and B) are an illustration. They lie just inside the limits, reaching ±15° at
     3.8 days before and 3.9 days after mid-visit, just outside the 3.75-day span.
 * **Panel (b)** shows the symmetric limit vs. allowed start shift U for several visit durations. D = 1.5 days with
   U = 3 days gives ±13.02°. Each extra day of U costs about 0.52° of roll, and each extra day of D about 0.26°.
 * **One-sided shift.** If the start can only slip later (`--early 0 --late 3`), the negative roll is limited only by
-  the visit length, and the allowed range widens to −14.61° to +13.09°.
+  the visit length, and the allowed range widens to −14.61° to +13.10°.
 
 ![roll limits example](roll_limits_example.png)
 
@@ -321,26 +330,74 @@ With `--early 0 --late 3` (start can only slip later), the positive roll is limi
 limits to within 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
 same inputs; `-o` sets the output directory (default: current directory).
 
+Instead of `--ra/--dec`, `--target NAME` resolves the target by name with `get_target_coords` from
+`roman_pointing.roman_observability`: the Roman Coronagraph database (CORGIDB) first, then SIMBAD. The J2000 position is
+used and proper motion is neglected, as elsewhere in this calculator. The name also labels the `--plot` figure. For
+high-proper-motion stars the CORGIDB and SIMBAD positions can differ by arcseconds (e.g., 15″ for ε Eri), which changes
+the limits by ≲ 0.01°.
+
 ## 5. Fixed-PA observations (e.g., slit spectroscopy)
 
-Here the roll is chosen at execution time so that PA_V3 lands in a required sky range, rather than holding a fixed
-offset. Definitions:
+Here the observer specifies two exact sky position angles, PA_1 and PA_2 (in PA_V3), instead of roll offsets. One visit
+contains several repetitions of both PAs, in alternating sequence. At each execution time the roll is set so that PA_V3
+lands exactly on the requested value. PAs here are PA_V3; for EXCAM, PA_APER ≈ PA_V3 + 150°.
 
-* **Constraint range [PA_lo, PA_hi]:** the sky PA_V3 values the program accepts, of width W_c = PA_hi − PA_lo.
-* **PA_start, PA_end:** the nominal PA_V3 on the earliest and latest possible execution dates. These differ by ΔPA(T),
-  where T is the length of the window in which the visit may fall.
-* On any date t, roll can reach [PA_nom(t) − 15°, PA_nom(t) + 15°].
+### Reachable PAs and the maximum-separation pair
 
-The visit can be done on every date in the window only if the constraint range contains [PA_end + 15°, PA_start − 15°]
-(for β > 0; reverse the roles of start and end for β < 0). That needs a width of at least
+A roll r gives PA_V3 = PA_nom(t) − r, so an exact sky PA P needs the roll r(t) = PA_nom(t) − P. Over the possible
+execution span of the visit (earliest start to latest end, of length T = D + early shift + late shift), P is reachable
+throughout only if
 
-$$ W_\mathrm{c,min} = \max\left(0,\ \Delta\mathrm{PA}(T) - 2\times 15^\circ\right). $$
+$$ \max_t \mathrm{PA_{nom}}(t) - 15^\circ \;\le\; P \;\le\; \min_t \mathrm{PA_{nom}}(t) + 15^\circ . $$
 
-If ΔPA(T) ≤ 30°, one fixed PA anywhere in [PA_start − 15°, PA_end + 15°] can be reached throughout the window.
+Both PA_1 and PA_2 must lie in this interval. Its two ends are the pair of PAs with the largest separation:
 
-All values below use the circular-orbit rate. To be conservative for windows in December–January, add ~3%.
+$$ \big|\mathrm{PA_2} - \mathrm{PA_1}\big|_\mathrm{max} = 2\times 15^\circ - \Delta\mathrm{PA}(T), $$
 
-| \|β\| | rate at quadrature (°/d) | max rate in FOR (°/d) | FOR window (d) | ΔPA across window (°) | fixed-PA window, worst / at quadrature (d) |
+where ΔPA(T) ≈ |rate| × T is the nominal PA swing over the span. If ΔPA(T) > 30°, no single fixed PA is reachable for
+the whole span. This is the result of section 4 in absolute terms: the interval ends are PA_nom(t_mid) − a_max and
+PA_nom(t_mid) − a_min, where a_min and a_max are the allowed roll offsets.
+
+### Calculator for a specific target
+
+`tools/plan_roll_limits.py` prints the reachable interval with the roll limits. With `--pa PA1 PA2` it also checks two
+requested PAs and gives the roll each one needs over the span.
+
+**Example: HIP 71618 (33 Boo).**
+
+* Target: resolved by name with `--target` (from SIMBAD; it is not in CORGIDB), RA 219.709°, Dec +44.405°
+  (β = +55.4°, in the continuous viewing zone).
+* Visit duration D = 5 days, in the Apr 19–27, 2027 schedule window (Apr 19 00:00 to Apr 27 00:00 UTC).
+* Centering the visit in the window allows a start shift of (8 − 5)/2 = 1.5 days, rounded up to 2 days early and late.
+  The planned start is 2027-04-20 12:00 UTC and the planned mid-visit 2027-04-23 00:00 UTC. The possible execution
+  span is 9 days, Apr 18 12:00 to Apr 27 12:00.
+* Over that span the Sun angle is 121.7°–123.5°, near the anti-Sun edge of the FOR, so PA_V3 rotates quickly
+  (≈ 1.13°/day).
+
+```
+PYTHONPATH=src python tools/plan_roll_limits.py --target "HIP 71618" \
+    --start 2027-04-20T12:00:00 --duration 5 --early 2 --late 2 --pa 5 20
+```
+
+```
+  'HIP 71618' not found in CORGIDB — querying SIMBAD...
+Target HIP 71618: RA 219.7093 deg, Dec +44.4045 deg (ICRS, J2000)
+Target beta = 55.44 deg, Sun angle 121.7-123.5 deg, dPA_V3/dt at mid-visit = -1.133 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -9.96 to +9.85 deg; symmetric limit +/-9.85 deg
+Reachable fixed sky PA_V3 over the span: 1.36 to 21.17 deg; maximum-separation pair 1.36 and 21.17 deg (separation 19.81 deg)
+PA1 = 5.00 deg: needed roll +1.17 to +11.36 deg over the span (reachable)
+PA2 = 20.00 deg: needed roll -13.83 to -3.64 deg over the span (reachable)
+```
+
+Over the 9-day span PA_V3 swings by 10.2°, so the two PAs can be at most 19.8° apart: 1.36° and 21.17°. Any pair inside
+that interval, such as 5° and 20°, is reachable throughout. Applying the needed rolls with `applyRollAngle` holds both
+limiting PAs with |roll| ≤ 15° over the whole span.
+
+### Guideline tables
+
+All values below use the circular-orbit rate. To be conservative for spans in December–January, add ~3% to the swing.
+
+| \|β\| | rate at quadrature (°/d) | max rate in FOR (°/d) | FOR window (d) | ΔPA across window (°) | longest span for a fixed PA, worst / at quadrature (d) |
 |---:|---:|---:|---:|---:|---:|
 | 5  | 0.09 | 0.13 | 73  | 7   | 73 / 73 |
 | 10 | 0.17 | 0.26 | 74  | 15  | 74 / 74 |
@@ -354,29 +411,32 @@ All values below use the circular-orbit rate. To be conservative for windows in 
 | 70 | 0.93 | 1.05 | all year | 360/yr | 28 / 32 |
 | 90 | 0.99 | 0.99 | all year | 360/yr | 30 / 30 |
 
-Minimum constraint range width W_c,min (°) for a window of T days, with ±15° roll and no extra margin. A dash means
-the window is longer than the FOR window at that latitude.
+Maximum separation between the two PAs, 30° − ΔPA(T) (°), for a possible execution span of T days, with ±15° roll and
+no extra margin, at the worst-case date in the FOR and centered on quadrature. "None" means no single fixed PA is
+reachable for the whole span.
 
-| \|β\| | T=30 worst | T=60 worst | T=90 worst | T=30 quad. | T=60 quad. | T=90 quad. |
-|---:|---:|---:|---:|---:|---:|---:|
-| ≤ 20 | 0 | 0 | – | 0 | 0 | – |
-| 30 | 0 | 3  | – | 0 | 2  | – |
-| 40 | 0 | 13 | 35 | 0 | 10 | 34 |
-| 45 | 0 | 19 | 41 | 0 | 14 | 39 |
-| 50 | 0 | 25 | 48 | 0 | 17 | 44 |
-| 54 | 6 | 40 | 71 | 0 | 19 | 47 |
-| 60 | 4 | 37 | 67 | 0 | 22 | 51 |
-| 70 | 1 | 32 | 62 | 0 | 26 | 55 |
-| 90 | 0 | 29 | 59 | 0 | 29 | 59 |
+| \|β\| | T = 7 d, worst / quad. | T = 14 d, worst / quad. | T = 30 d, worst / quad. |
+|---:|---:|---:|---:|
+| 5  | 29.2 / 29.4 | 28.4 / 28.8 | 26.9 / 27.4 |
+| 10 | 28.3 / 28.8 | 26.8 / 27.6 | 23.9 / 24.8 |
+| 20 | 26.6 / 27.6 | 23.7 / 25.3 | 17.8 / 19.7 |
+| 30 | 25.1 / 26.5 | 20.7 / 23.1 | 11.9 / 15.0 |
+| 40 | 23.6 / 25.6 | 17.7 / 21.1 | 6.0 / 10.7 |
+| 45 | 22.9 / 25.1 | 16.3 / 20.2 | 3.0 / 8.9 |
+| 50 | 22.2 / 24.7 | 14.8 / 19.4 | none / 7.1 |
+| 54 | 21.5 / 24.4 | 13.0 / 18.8 | none / 5.9 |
+| 60 | 22.0 / 24.0 | 14.1 / 18.0 | none / 4.3 |
+| 70 | 22.7 / 23.5 | 15.3 / 17.0 | none / 2.1 |
+| 90 | 23.1 / 23.1 | 16.2 / 16.2 | 0.4 / 0.4 |
 
 How to read these:
 
-* **Low-latitude targets (|β| ≲ 20°)** keep essentially one orientation for an entire visibility window. Roll alone
-  covers it.
-* **Targets near |β| ≈ 54°** are the most demanding for orientation-constrained programs. Their worst-case window sits
-  where the Sun angle passes near 54° or 126°.
+* **Low-latitude targets (|β| ≲ 20°)** keep most of the 30° between the two PAs for spans of several weeks, and a single
+  fixed PA stays reachable for an entire visibility window.
+* **Targets near |β| ≈ 54°** are the most demanding. Their worst-case span sits where the Sun angle passes near 54° or
+  126°.
 * **Within the continuous viewing zone**, the worst case shifts to the dates of closest Sun approach (Δ ≈ 0° or 180°).
-  At the poles, the image rotates at a uniform ≈ 1°/day.
+  At the poles, the image rotates at a uniform ≈ 1°/day, so the separation is ≈ 30° − T × 1°/day.
 * **Roll margin.** To hold back part of the roll range (e.g., for attitude-dependent constraints or execution margin),
   replace 2 × 15° by 2 × (15° − margin).
 
@@ -398,17 +458,34 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
 ## 7. Assumptions and limitations
 
 * **Roll-limit model (section 4).**
-  * CPGS computes each visit's sky PA once, for the planned mid-visit. The PA is held for the whole visit and is not
-    recomputed if the visit moves within its buffer.
-  * Each visit (roll A or roll B) is treated separately with its own planned mid-time.
+  * CPGS computes each visit's sky PAs once, for the planned mid-visit. The PAs are held for the whole visit and are
+    not recomputed if the visit moves within its buffer.
+  * Rolls A and B alternate within one visit, so both sky PAs use the same planned mid-visit and must stay reachable
+    over the same span.
   * The guideline tables assume a symmetric buffer ±U; the calculator accepts separate early and late shifts.
   * The visit span plus buffer must lie inside the FOR.
   * Any additional attitude margin CPGS or the observatory reserves inside ±15° is not included; subtract it from 15°.
+* **Fixed-PA model (section 5).** Both PAs alternate within one visit and are held exactly over its whole possible
+  execution span, which must lie inside the FOR. The same roll-margin caveat applies.
 
 * **Observatory position.** It is taken at the Sun–Earth L2 point, as in `getL2Positions`. Roman's real halo orbit
   probably displaces the Sun direction by a few tenths of a degree with a ~6-month period. That would change the rate by
   ≲ 0.01°/day, which matters only in relative terms for very-low-|β| targets, whose rates are ~0.1°/day. This is an
   order-of-magnitude estimate; it has not been checked against the Horizons Roman ephemeris used in `drive_cpgs.py`.
+* **EXCAM aperture offset.** `calcRomanAngles` points the boresight (V1) at the target, and all PAs here are measured
+  there. In practice the CGI aperture is placed on the target. The in-flight SIAF (`roman_siaf_inflight_20261013.xml`,
+  aperture `CGI_CEN`) puts it at (V2, V3) = (−1103.7″, −841.3″), δ = 0.386° from V1. CPGS evaluates PAs with the
+  current SIAF through the STScI backend, so its values include this offset. Upper bounds on the effect:
+  * Absolute PA: north at the aperture is rotated from north at V1 by ≈ δ sin φ tan(Dec), where φ is the PA of
+    the aperture offset from V1 and Dec is the target declination. The bound δ |tan(Dec)| is 0.07° at |Dec| = 10°,
+    0.39° at 45°, 0.67° at 60°, and 2.2° at 80°. For the examples it is 0.06° (ε Eri) and 0.38° (HIP 71618). This
+    shifts the PA_V3 and PA_APER values in sections 4 and 5, including the reachable fixed-PA interval, by the same
+    amount at both ends.
+  * Rate and PA drift: the fractional change is ≲ δ |tan(Dec)| (δ in radians), i.e., ≲ 0.7% at |Dec| = 45° and
+    ≲ 1.2% at 60°. Over a ±30° drift this is ≲ 0.2° at 45°, so the roll-offset limits and the maximum fixed-PA
+    separation are essentially unchanged.
+  * Field of regard: the target's Sun angle differs from the boresight's by ≤ δ, which moves the FOR edges by
+    ≤ 0.4 day.
 * **Target and attitude limits.** Stellar parallax and proper motion are negligible. The FOR is taken as 54° ≤ ε ≤ 126°.
   The full ±15° roll is assumed available everywhere in the FOR.
 * **Latitude frame.** β is the barycentric mean-ecliptic (J2000) latitude. In astropy, for a `SkyCoord` named `coord`,

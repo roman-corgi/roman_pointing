@@ -455,16 +455,18 @@ if __name__ == "__main__":
     plot_rate_map(args.outdir)
     plot_geometry_diagram(args.outdir)
 
-    # guideline table: fixed PA
+    # guideline tables: fixed PA. The two fixed PAs of a visit can be at most 2 ROLL_MAX - (PA swing) apart
+    spans = (7, 14, 30)
+    label = "max PA separation (deg), worst / quad, for span T ="
     print(f"\n{'|beta|':>6} {'rate quad':>10} {'rate max':>9} {'window d':>9} {'swing':>7} "
-          f"{'fixed-PA d (worst/quad)':>24} {'W30 worst':>10} {'W60 worst':>10}")
+          f"{'fixed-PA d (worst/quad)':>24} | {label} " + " ".join(f"{f'{T} d':>13}" for T in spans))
     for b in [5, 10, 15, 20, 30, 40, 45, 50, 54, 60, 70, 80, 90]:
         sb = np.sin(np.radians(b))
         rmax = SUN_RATE / sb if b >= SUN_ANG_MIN else SUN_RATE * sb / np.sin(np.radians(SUN_ANG_MIN)) ** 2
         _, dur, sw = for_window(b)
         tw = fixed_pa_window(b, "worst")
         tq = fixed_pa_window(b, "quadrature")
-        w30 = max(pa_swing_in_window(b, 30) - 2 * ROLL_MAX, 0)
-        w60 = max(pa_swing_in_window(b, 60) - 2 * ROLL_MAX, 0)
+        seps = [f"{2 * ROLL_MAX - pa_swing_in_window(b, T):5.1f} / "
+                f"{2 * ROLL_MAX - pa_swing_in_window(b, T, 'quadrature'):5.1f}" for T in spans]
         print(f"{b:6.0f} {SUN_RATE * sb:10.3f} {rmax:9.3f} {dur:9.1f} {sw:7.1f} "
-              f"{tw:11.1f} / {tq:<10.1f} {w30:10.1f} {w60:10.1f}")
+              f"{tw:11.1f} / {tq:<10.1f} | {'':>{len(label)}} " + " ".join(f"{c:>13}" for c in seps))

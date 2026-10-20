@@ -233,8 +233,9 @@ def pa_v3_drift(ra, dec, t_mid, dt):
 
     Returns:
         dict:
-            s: PA_V3(t) - PA_V3(t_mid) at dt (deg), sun_ang: Sun angle at dt (deg),
-            rate: dPA_V3/dt at t_mid (deg/day), beta: ecliptic latitude (deg)
+            s: PA_V3(t) - PA_V3(t_mid) at dt (deg), pa_mid: PA_V3(t_mid) in
+            [0, 360) (deg), sun_ang: Sun angle at dt (deg), rate: dPA_V3/dt at
+            t_mid (deg/day), beta: ecliptic latitude (deg)
     """
     ts = t_mid + dt * u.day
     target = SkyCoord(
@@ -249,8 +250,10 @@ def pa_v3_drift(ra, dec, t_mid, dt):
     ).transform_to(BarycentricMeanEcliptic)
     sun_ang, _, _, B_C_I = calcRomanAngles(target, ts, getL2Positions(ts))
     pa = np.degrees(np.unwrap(getRomanPositionAngle(B_C_I).value))
+    pa_mid = np.interp(0, dt, pa)
     return {
-        "s": pa - np.interp(0, dt, pa),
+        "s": pa - pa_mid,
+        "pa_mid": pa_mid % 360,
         "sun_ang": sun_ang.to_value(u.deg),
         "rate": np.interp(0, dt, np.gradient(pa, dt)),
         "beta": target.lat.to_value(u.deg),

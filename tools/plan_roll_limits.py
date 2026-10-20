@@ -1,14 +1,20 @@
 """
-Allowed roll offsets for a Roman visit when CPGS fixes the sky PA at the planned mid-visit.
+Allowed roll offsets, and reachable fixed sky PAs, for a Roman visit when the sky PA is held fixed.
 
 A requested roll offset A_nom becomes an absolute sky PA, P = PA_nom(t_mid) - A_nom (roll offsets follow
 roman_pointing.applyRollAngle: a roll of +r changes PA_V3 by -r). Executing at time t then needs a roll offset
 A(t) = A_nom + [PA_nom(t) - PA_nom(t_mid)], which must stay within ±ROLL_MAX from the earliest possible visit
-start to the latest possible visit end. The rate model is in roman_pointing.field_rotation.
+start to the latest possible visit end. Equivalently, an exact sky PA P is reachable over that span only if
+max PA_nom - ROLL_MAX <= P <= min PA_nom + ROLL_MAX; the two ends are the pair of fixed PAs with the maximum
+separation. The rate model is in roman_pointing.field_rotation.
 
 Usage:
-  # allowed roll offsets for one target and visit (add --plot for a figure)
+  # allowed roll offsets and fixed sky PAs for one target and visit (add --plot for a figure,
+  # --pa PA1 PA2 to check two requested sky PAs)
   python tools/plan_roll_limits.py --ra 53.2327 --dec -9.4583 --start 2027-01-19T00:00:00 \\
+      --duration 1.5 --early 3 --late 3
+  # same, resolving the target by name (CORGIDB, then SIMBAD) instead of --ra/--dec
+  python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
       --duration 1.5 --early 3 --late 3
   # generic roll-limit figures, the README worked example, and the guideline table
   python tools/plan_roll_limits.py --figures -o docs/field_rotation_rate
@@ -34,11 +40,30 @@ from roman_pointing.field_rotation import (
     pa_from_ecliptic_north,
     pa_v3_drift,
 )
+from roman_pointing.roman_observability import get_target_coords
 
 # README worked example: epsilon Eridani, January 2027
-EXAMPLE = {"ra": 53.2327, "dec": -9.4583, "start": "2027-01-19T00:00:00", "duration": 1.5, "early": 3.0,
-           "late": 3.0, "name": "ε Eridani", "offsets": {"A": -13.0, "B": +13.0},
-           "filename": "roll_limits_example.png"}
+EXAMPLE = {"target": "eps Eri", "start": "2027-01-19T00:00:00", "duration": 1.5, "early": 3.0, "late": 3.0,
+           "name": "ε Eridani", "offsets": {"A": -13.0, "B": +13.0}, "filename": "roll_limits_example.png"}
+
+
+def resolve_target(name):
+    """Resolve a target name with get_target_coords (CORGIDB, then SIMBAD).
+
+    Args:
+        name (str):
+            Target name
+
+    Returns:
+        tuple:
+            ra, dec (deg, ICRS, J2000); proper motion is neglected, as in pa_v3_drift
+    """
+    coords = get_target_coords([name])
+    if name not in coords:
+        raise SystemExit(f"Could not resolve target '{name}'")
+    icrs = coords[name].icrs
+    print(f"Target {name}: RA {icrs.ra.deg:.4f} deg, Dec {icrs.dec.deg:+.4f} deg (ICRS, J2000)")
+    return icrs.ra.deg, icrs.dec.deg
 
 
 def roll_offset_limits(beta, day_mid, early, late):
@@ -97,7 +122,12 @@ def max_symmetric_roll(beta, halfspan, placement="worst"):
 
 
 def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
-    """Allowed requested roll offsets for a specific target and visit, using roman_pointing numerics.
+    """Allowed requested roll offsets and reachable fixed sky PA_V3 for a specific target and visit.
+
+    Uses roman_pointing with the solar ephemeris. A fixed sky PA P needs a roll PA_nom(t) - P at time t, so it is
+    reachable over the span for pa_lo <= P <= pa_hi, with pa_lo = PA_nom(t_mid) - a_max and
+    pa_hi = PA_nom(t_mid) - a_min. pa_lo and pa_hi are the pair of fixed PAs with the maximum separation,
+    a_max - a_min = 2 ROLL_MAX - (PA swing over the span); there is none if that is negative.
 
     Args:
         ra (float):
@@ -115,13 +145,16 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
 
     Returns:
         dict:
-            a_min, a_max (deg, applyRollAngle sense), beta (deg), Sun angle range (deg), PA_V3 rate at mid-visit (deg/day)
+            a_min, a_max (deg, applyRollAngle sense); pa_mid, pa_lo, pa_hi (deg, sky PA_V3 in [0, 360));
+            separation (deg); beta (deg); Sun angle range (deg); PA_V3 rate at mid-visit (deg/day)
     """
     t_mid = Time(start, scale="utc") + duration / 2 * u.day
     dt = np.linspace(-(duration / 2 + early), duration / 2 + late, 241)
     drift = pa_v3_drift(ra, dec, t_mid, dt)
-    s = drift["s"]
-    return {"a_min": -ROLL_MAX - s.min(), "a_max": ROLL_MAX - s.max(), "beta": drift["beta"],
+    s, pa_mid = drift["s"], drift["pa_mid"]
+    a_min, a_max = -ROLL_MAX - s.min(), ROLL_MAX - s.max()
+    return {"a_min": a_min, "a_max": a_max, "pa_mid": pa_mid, "pa_lo": (pa_mid - a_max) % 360,
+            "pa_hi": (pa_mid - a_min) % 360, "separation": a_max - a_min, "beta": drift["beta"],
             "sun_ang": (drift["sun_ang"].min(), drift["sun_ang"].max()), "rate": drift["rate"]}
 
 
@@ -329,11 +362,15 @@ if __name__ == "__main__":
                                  description="Allowed roll offsets when CPGS fixes the sky PA at mid-visit")
     ap.add_argument("--ra", type=float, help="Target RA (deg, ICRS)")
     ap.add_argument("--dec", type=float, help="Target Dec (deg, ICRS)")
+    ap.add_argument("--target", type=str,
+                    help="Target name, resolved with get_target_coords (CORGIDB, then SIMBAD), instead of --ra/--dec")
     ap.add_argument("--start", type=str, help="Requested visit start (ISO, UTC)")
     ap.add_argument("--duration", type=float, default=1.0, help="Visit duration (days)")
     ap.add_argument("--early", type=float, default=0.0, help="Days the start may move earlier than requested")
     ap.add_argument("--late", type=float, default=0.0, help="Days the start may move later than requested")
-    ap.add_argument("--name", type=str, help="Target name for the plot title")
+    ap.add_argument("--pa", type=float, nargs=2, metavar=("PA1", "PA2"),
+                    help="Check two requested fixed sky PA_V3 values (deg) against the reachable range")
+    ap.add_argument("--name", type=str, help="Target name for the plot title (default: --target)")
     ap.add_argument("--plot", action="store_true", help="Also plot needed roll vs. execution time for this visit")
     ap.add_argument("--figures", action="store_true",
                     help="Make the generic roll-limit figures, the README worked example, and the guideline table")
@@ -344,7 +381,9 @@ if __name__ == "__main__":
 
     if args.figures:
         os.makedirs(outdir, exist_ok=True)
-        plot_target_roll_limits(outdir, **EXAMPLE)
+        example = dict(EXAMPLE)
+        example["ra"], example["dec"] = resolve_target(example.pop("target"))
+        plot_target_roll_limits(outdir, **example)
         plot_roll_limits_vs_latitude(outdir)
         plot_roll_limits_map(outdir)
 
@@ -360,13 +399,33 @@ if __name__ == "__main__":
                   + f" | {1 / rmax:9.2f} / {1 / (SUN_RATE * sb):<9.2f}")
         raise SystemExit
 
+    if args.target is not None:
+        if args.ra is not None or args.dec is not None:
+            ap.error("give either --target or --ra/--dec, not both")
+        args.ra, args.dec = resolve_target(args.target)
+        args.name = args.name or args.target
     if args.ra is None or args.dec is None or args.start is None:
-        ap.error("--ra, --dec and --start are required unless --figures is given")
+        ap.error("--start and either --target or --ra/--dec are required unless --figures is given")
     res = roll_limits_for_target(args.ra, args.dec, args.start, args.duration, args.early, args.late)
     print(f"Target beta = {res['beta']:.2f} deg, Sun angle {res['sun_ang'][0]:.1f}-{res['sun_ang'][1]:.1f} deg, "
           f"dPA_V3/dt at mid-visit = {res['rate']:+.3f} deg/day")
     print(f"Allowed requested roll offsets (applyRollAngle sense): {res['a_min']:+.2f} to {res['a_max']:+.2f} deg; "
           f"symmetric limit +/-{min(res['a_max'], -res['a_min']):.2f} deg")
+    if res["separation"] >= 0:
+        print(f"Reachable fixed sky PA_V3 over the span: {res['pa_lo']:.2f} to {res['pa_hi']:.2f} deg; "
+              f"maximum-separation pair {res['pa_lo']:.2f} and {res['pa_hi']:.2f} deg "
+              f"(separation {res['separation']:.2f} deg)")
+    else:
+        print(f"No fixed sky PA_V3 is reachable over the whole span: the nominal PA swing exceeds "
+              f"{2 * ROLL_MAX:.0f} deg by {-res['separation']:.2f} deg")
+    if args.pa is not None:
+        for k, p in enumerate(args.pa, 1):
+            # needed roll PA_nom(t) - P over the span; its range follows from a_min, a_max
+            r_mid = (res["pa_mid"] - p + 180) % 360 - 180
+            r_lo, r_hi = r_mid - ROLL_MAX - res["a_min"], r_mid + ROLL_MAX - res["a_max"]
+            ok = -ROLL_MAX - 0.005 <= r_lo and r_hi <= ROLL_MAX + 0.005  # tolerate the printed 0.01 deg rounding
+            print(f"PA{k} = {p:.2f} deg: needed roll {r_lo:+.2f} to {r_hi:+.2f} deg over the span "
+                  f"({'reachable' if ok else 'NOT reachable'})")
     if res["sun_ang"][0] < SUN_ANG_MIN or res["sun_ang"][1] > SUN_ANG_MAX:
         print("WARNING: part of the visit span is outside the 54-126 deg field of regard")
     if args.plot:
