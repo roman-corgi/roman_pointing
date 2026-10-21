@@ -3,7 +3,7 @@ Validation and figures for the Roman field rotation model (rate of change of PA_
 equivalently PA_EXCAM_Y ≈ PA_V3 + 150 deg) vs. target ecliptic latitude and time of year.
 The model is in roman_pointing.field_rotation; this script validates it against
 roman_pointing.calcRomanAngles / getRomanPositionAngle and makes the figures and the
-fixed-PA table in docs/field_rotation_rate. Roll-offset planning for specific visits is
+fixed-PA table in docs/field_rotation_rate. Roll-offset planning for specific RDI sequences is
 in plan_roll_limits.py.
 
 Usage:
@@ -456,7 +456,7 @@ if __name__ == "__main__":
     plot_rate_map(args.outdir)
     plot_geometry_diagram(args.outdir)
 
-    # guideline tables: fixed PA. The two fixed PAs of a visit can be at most 2 ROLL_MAX - (PA swing) apart
+    # guideline tables: fixed PA. The two fixed PAs of an RDI sequence can be at most 2 ROLL_MAX - (PA swing) apart
     spans = (7, 14, 30)
     label = "max PA separation (deg), worst / quad, for span T ="
     print(f"\n{'|beta|':>6} {'rate quad':>10} {'rate max':>9} {'window d':>9} {'swing':>7} "

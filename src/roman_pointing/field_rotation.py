@@ -227,7 +227,7 @@ def pa_v3_drift(ra, dec, t_mid, dt):
         dec (float):
             Target declination (deg, ICRS)
         t_mid (astropy.time.Time):
-            Reference time, e.g. the planned middle of a visit
+            Reference time, e.g. the planned middle of an RDI sequence
         dt (numpy.ndarray):
             Times relative to t_mid (days); must include 0
 

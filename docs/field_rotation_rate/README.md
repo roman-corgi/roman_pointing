@@ -54,9 +54,9 @@ angle as PA_Z, returned by `getRomanPositionAngle` in `roman_pointing`.
   * It writes the `pa_v3_rate_*.png` figures and prints the fixed-PA guideline tables of section 5.
   * It also defines the chart style shared with `plan_roll_limits.py`.
 * [`tools/plan_roll_limits.py`](../../tools/plan_roll_limits.py): the roll-limit calculator for sections 4 and 5.
-  * For one target and visit, it prints the allowed roll offsets and the reachable fixed sky PAs.
+  * For one target and RDI sequence, it prints the allowed roll offsets and the reachable fixed sky PAs.
   * Targets are given by name (`--target`) or position (`--ra/--dec`).
-  * Optional arguments check two requested PAs (`--pa`) or plot the visit (`--plot`).
+  * Optional arguments check two requested PAs (`--pa`) or plot the RDI sequence (`--plot`).
   * `--figures` writes the worked-example and generic `roll_limits_*.png` figures and prints the roll guideline table.
 * [`docs/Notebooks/roll_angle_limit_examples.ipynb`](../Notebooks/roll_angle_limit_examples.ipynb): the worked
   examples of sections 4 and 5, run with the calculator, with this page's EXCAM figure.
@@ -101,8 +101,9 @@ Practical consequences, assuming the 54°–126° Sun-angle field of regard (FOR
   | \|β\| = 45° | 33–42 |
   | \|β\| ≈ 54° (worst case) | 24.5 |
   | Ecliptic poles | 30 |
-* **Maximum requested roll offsets** ([section 4](#4-maximum-roll-offsets-when-cpgs-fixes-the-pa-at-mid-visit)).
-  CPGS fixes each visit's sky PAs at the planned mid-visit. To keep that PA reachable over a visit of duration D, with the
+* **Maximum requested roll offsets** ([section 4](#4-maximum-roll-offsets-when-cpgs-fixes-the-pa-at-mid-sequence)).
+  CPGS fixes the sky PAs of each RDI sequence (the scheduled block of observations on a given target) at the planned
+  middle of the sequence (mid-sequence). To keep that PA reachable over an RDI sequence of duration D, with the
   start allowed to move by ±U days:
 
   $$ |A_\mathrm{req}|,\ |B_\mathrm{req}| \le 15^\circ - |\mathrm{rate}| \times (D/2 + U) $$
@@ -110,8 +111,8 @@ Practical consequences, assuming the 54°–126° Sun-angle field of regard (FOR
   Each degree of |roll| given up buys 1/|rate| days of start-time slack, about 0.8–1.6 days per degree for
   |β| ≳ 40°. `tools/plan_roll_limits.py` computes the limits for a specific target, start date, duration and start shift.
 * **Fixed-PA observations** (e.g., slit spectroscopy; [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy)).
-  The observer specifies two exact sky PAs, observed alternately within one visit. Both must stay reachable with ±15° of
-  roll over the visit's possible execution span T, so they can be at most 30° − ΔPA(T) ≈ 30° − |rate| × T apart.
+  The observer specifies two exact sky PAs, observed alternately within one RDI sequence. Both must stay reachable with ±15° of
+  roll over the RDI sequence's possible execution span T, so they can be at most 30° − ΔPA(T) ≈ 30° − |rate| × T apart.
   `tools/plan_roll_limits.py` gives the reachable interval, whose ends are the maximum-separation pair.
 
 ## 1. Geometry and conventions
@@ -212,28 +213,28 @@ labeled with its rate and the number of days a fixed PA_V3 stays within ±15° a
 
 ![map](pa_v3_rate_map.png)
 
-## 4. Maximum roll offsets when CPGS fixes the PA at mid-visit
+## 4. Maximum roll offsets when CPGS fixes the PA at mid-sequence
 
 ### The problem
 
-The observer requests a start date and two roll offsets, A_req and B_req. One visit contains several repetitions of
-both rolls, in alternating sequence. Roll offsets follow the `roman_pointing` convention: a roll of +A_req passed to
+The observer requests a start date and two roll offsets, A_req and B_req. One RDI sequence, the scheduled block of
+observations on a given target, contains several repetitions of both rolls, in alternating sequence. Roll offsets follow the `roman_pointing` convention: a roll of +A_req passed to
 `applyRollAngle` changes PA_V3 (and PA_APER) by −A_req. CPGS converts each requested roll into an absolute sky PA
-computed for the planned middle of the visit:
+computed for the planned middle of the RDI sequence:
 
 $$ P_A = P_{\mathrm{nom}}(t_\mathrm{mid}) - A_\mathrm{req}, \qquad P_B = P_{\mathrm{nom}}(t_\mathrm{mid}) - B_\mathrm{req} $$
 
-The roll offsets must stay within ±15° of the nominal roll over the full time interval in which the visit might execute:
+The roll offsets must stay within ±15° of the nominal roll over the full time interval in which the RDI sequence might execute:
 
-* **The visit itself** reaches D/2 on either side of mid-visit, where D is the visit duration.
+* **The RDI sequence itself** reaches D/2 on either side of mid-sequence, where D is the RDI sequence duration.
 * **Any start shift** the schedulers may need adds U days on top of that, for example within a 3 day scheduling buffer.
 
-Long visits, rolls requested near ±15°, and fast-rotating targets push A(t) past the limit. The visit then has only a
+Long RDI sequences, rolls requested near ±15°, and fast-rotating targets push A(t) past the limit. The RDI sequence then has only a
 narrow range of legal start times.
 
 ### Guideline formula
 
-Let H = D/2 + U be the farthest the visit can execute from the planned mid-visit. To first order:
+Let H = D/2 + U be the farthest the RDI sequence can execute from the planned mid-sequence. To first order:
 
 $$ \boxed{|A_\mathrm{req}|,\ |B_\mathrm{req}| \;\le\; 15^\circ - |\mathrm{rate}| \times \left(\tfrac{D}{2} + U\right)} $$
 
@@ -250,7 +251,7 @@ span for a conservative limit, and add ~3% in December–January. `tools/plan_ro
 * **The two rolls limit different sides.** For a northern-ecliptic target (β > 0), PA_V3 decreases with time, and so
   does the needed roll A(t). Running late pushes a negative roll further negative, and running early pushes a positive
   roll further positive. So for β > 0:
-  * the negative roll limits how late the visit can run, and
+  * the negative roll limits how late the RDI sequence can run, and
   * the positive roll limits how early it can run.
 
   The roles swap for β < 0. If the buffer is one-sided, only one roll needs the reduced limit; the other can go to
@@ -262,9 +263,9 @@ span for a conservative limit, and add ~3% in December–January. `tools/plan_ro
 
 * Target: ε Eridani, resolved by name with `--target "eps Eri"` (found in CORGIDB): RA 53.228°, Dec −9.458°
   (β = −27.7°).
-* Visit duration D = 1.5 days (conservative), planned to start 2027-01-19 00:00 UTC, so CPGS sets the sky PA for the
-  planned mid-visit at 2027-01-19 18:00 UTC.
-* The start may move up to 3 days early or late (U = 3 days, H = D/2 + U = 3.75 days). The visit can therefore start
+* RDI sequence duration D = 1.5 days (conservative), planned to start 2027-01-19 00:00 UTC, so CPGS sets the sky PA for the
+  planned mid-sequence at 2027-01-19 18:00 UTC.
+* The start may move up to 3 days early or late (U = 3 days, H = D/2 + U = 3.75 days). The RDI sequence can therefore start
   anywhere in the Jan 16–22 scheduling window (Jan 16 00:00 to Jan 22 00:00 UTC) and may end as late as Jan 23 12:00.
 * Over that span the Sun angle is 103.5°–110.2° and PA_V3 increases at ≈ 0.52°/day.
 
@@ -278,7 +279,7 @@ PYTHONPATH=src python tools/plan_roll_limits.py --target "eps Eri" \
 ```
   Found 'eps Eri' in CORGIDB (StarAliases lookup).
 Target eps Eri: RA 53.2284 deg, Dec -9.4582 deg (ICRS, J2000)
-Target beta = -27.71 deg, Sun angle 103.5-110.2 deg, dPA_V3/dt at mid-visit = +0.517 deg/day
+Target beta = -27.71 deg, Sun angle 103.5-110.2 deg, dPA_V3/dt at mid-sequence = +0.517 deg/day
 Allowed requested roll offsets (applyRollAngle sense): -13.02 to +13.10 deg; symmetric limit +/-13.02 deg
 Reachable fixed sky PA_V3 over the span: 232.15 to 258.27 deg; maximum-separation pair 232.15 and 258.27 deg (separation 26.12 deg)
 ```
@@ -293,17 +294,17 @@ The last line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-
     and the +13.10° roll reaches +15° at its end (latest end). So the negative roll is limited by running early, and
     the positive roll by running late.
   * The thin lines at ±13° (rolls A and B) are an illustration. They lie just inside the limits, reaching ±15° at
-    3.8 days before and 3.9 days after mid-visit.
-* **Panel (b)** shows the symmetric limit vs. allowed start shift U for several visit durations. D = 1.5 days with
+    3.8 days before and 3.9 days after mid-sequence.
+* **Panel (b)** shows the symmetric limit vs. allowed start shift U for several RDI sequence durations. D = 1.5 days with
   U = 3 days gives ±13.02°. Each extra day of U costs about 0.52° of roll, and each extra day of D about 0.26°.
 * **One-sided shift.** If the start can only slip later (`--early 0 --late 3`), the negative roll is limited only by
-  the visit length, and the allowed range widens to −14.61° to +13.10°.
+  the RDI sequence length, and the allowed range widens to −14.61° to +13.10°.
 
 ![roll limits example](roll_limits_example.png)
 
 ### Guideline table
 
-Maximum requested |roll| (°) for half-spans H = D/2 + U, at the worst-case date in the FOR and with mid-visit at
+Maximum requested |roll| (°) for half-spans H = D/2 + U, at the worst-case date in the FOR and with mid-sequence at
 quadrature. The last column gives the days of start-time slack gained per degree of |roll| given up.
 
 | \|β\| | max \|rate\|, worst / quad. (°/d) | H = 1 d | H = 2 d | H = 3 d | H = 4 d | slack per 1° (d), worst / quad. |
@@ -320,7 +321,7 @@ quadrature. The last column gives the days of start-time slack gained per degree
 | 70 | 1.05 / 0.93 | 14.0 / 14.1 | 12.9 / 13.1 | 11.9 / 12.2 | 10.8 / 11.3 | 1.0 / 1.1 |
 | 90 | 0.99 / 0.99 | 14.0 / 14.0 | 13.0 / 13.0 | 12.0 / 12.0 | 11.1 / 11.1 | 1.0 / 1.0 |
 
-**Rule of thumb for CPP guidance.** To keep the full 2–3 day buffer for a 1–2 day visit (H ≈ 3–4 days):
+**Rule of thumb for CPP guidance.** To keep the full 2–3 day buffer for a 1–2 day RDI sequence (H ≈ 3–4 days):
 
 | Target latitude | Maximum \|roll\| |
 |---|---|
@@ -337,14 +338,14 @@ quadrature. The last column gives the days of start-time slack gained per degree
 
 ![roll limits vs latitude](roll_limits_vs_latitude.png)
 
-**[roll_limits_map.png](roll_limits_map.png)**: maximum |roll| vs. requested mid-visit date (days after solar
+**[roll_limits_map.png](roll_limits_map.png)**: maximum |roll| vs. requested mid-sequence date (days after solar
 conjunction) and |β|, for H = 2 and 4 days.
 
 ![roll limits map](roll_limits_map.png)
 
 ### Calculator for a specific target
 
-`tools/plan_roll_limits.py` computes the allowed offsets for one target and visit directly with `roman_pointing`,
+`tools/plan_roll_limits.py` computes the allowed offsets for one target and RDI sequence directly with `roman_pointing`,
 using the actual solar ephemeris:
 
 ```
@@ -353,11 +354,11 @@ PYTHONPATH=src python tools/plan_roll_limits.py --ra 108.949 --dec 67.783 \
 ```
 
 ```
-Target beta = 45.00 deg, Sun angle 107.5-112.8 deg, dPA_V3/dt at mid-visit = -0.806 deg/day
+Target beta = 45.00 deg, Sun angle 107.5-112.8 deg, dPA_V3/dt at mid-sequence = -0.806 deg/day
 Allowed requested roll offsets (applyRollAngle sense): -11.83 to +11.72 deg; symmetric limit +/-11.72 deg
 ```
 
-With `--early 0 --late 3` (start can only slip later), the positive roll is limited only by the visit length: −11.83° to
+With `--early 0 --late 3` (start can only slip later), the positive roll is limited only by the RDI sequence length: −11.83° to
 +14.19°. The calculator warns if any part of the span falls outside the field of regard. It agrees with the analytic
 limits to within 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
 same inputs; `-o` sets the output directory (default: current directory).
@@ -370,13 +371,13 @@ the limits by ≲ 0.01°.
 
 ## 5. Fixed-PA observations (e.g., slit spectroscopy)
 
-Here the observer plans two exact PA_V3 position angles, $P_1$ and $P_2$, instead of roll offsets. One visit
+Here the observer plans two exact PA_V3 position angles, $P_1$ and $P_2$, instead of roll offsets. One RDI sequence
 contains several repetitions of both PAs, in alternating sequence. At each execution time the roll is adjusted so that PA_V3 lands on the requested value.
 
 ### Reachable PAs and the maximum-separation pair
 
 A roll $A$ gives $\mathrm{PA_{V3}} = P_{\mathrm{nom}}(t) - A$, so position angle $P_1$ requires roll $A(t) = P_{\mathrm{nom}}(t) - P_1$. Over the possible
-execution span of the visit (earliest start to latest end, of length T = D + early shift + late shift), $P_1$ is reachable
+execution span of the RDI sequence (earliest start to latest end, of length T = D + early shift + late shift), $P_1$ is reachable
 throughout only if
 
 $$ \max_t P_{\mathrm{nom}}(t) - 15^\circ \le P_1 \le \min_t P_{\mathrm{nom}}(t) + 15^\circ . $$
@@ -397,9 +398,9 @@ requested PAs and gives the roll each one needs over the span.
 
 * Target: resolved by name with `--target` (from SIMBAD; it is not in CORGIDB), RA 219.709°, Dec +44.405°
   (β = +55.4°, in the continuous viewing zone).
-* Visit duration D = 5 days, in the Apr 19–27, 2027 schedule window (Apr 19 00:00 to Apr 27 00:00 UTC).
-* Centering the visit in the window allows a start shift of (8 − 5)/2 = 1.5 days, rounded up to 2 days early and late.
-  The planned start is 2027-04-20 12:00 UTC and the planned mid-visit 2027-04-23 00:00 UTC. The possible execution
+* RDI sequence duration D = 5 days, in the Apr 19–27, 2027 schedule window (Apr 19 00:00 to Apr 27 00:00 UTC).
+* Centering the RDI sequence in the window allows a start shift of (8 − 5)/2 = 1.5 days, rounded up to 2 days early and late.
+  The planned start is 2027-04-20 12:00 UTC and the planned mid-sequence 2027-04-23 00:00 UTC. The possible execution
   span is 9 days, Apr 18 12:00 to Apr 27 12:00.
 * Over that span the Sun angle is 121.7°–123.5°, near the anti-Sun edge of the FOR, so PA_V3 rotates quickly
   (≈ 1.13°/day).
@@ -412,7 +413,7 @@ PYTHONPATH=src python tools/plan_roll_limits.py --target "HIP 71618" \
 ```
   'HIP 71618' not found in CORGIDB — querying SIMBAD...
 Target HIP 71618: RA 219.7093 deg, Dec +44.4045 deg (ICRS, J2000)
-Target beta = 55.44 deg, Sun angle 121.7-123.5 deg, dPA_V3/dt at mid-visit = -1.133 deg/day
+Target beta = 55.44 deg, Sun angle 121.7-123.5 deg, dPA_V3/dt at mid-sequence = -1.133 deg/day
 Allowed requested roll offsets (applyRollAngle sense): -9.96 to +9.85 deg; symmetric limit +/-9.85 deg
 Reachable fixed sky PA_V3 over the span: 1.36 to 21.17 deg; maximum-separation pair 1.36 and 21.17 deg (separation 19.81 deg)
 PA1 = 5.00 deg: needed roll +1.17 to +11.36 deg over the span (reachable)
@@ -488,14 +489,14 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
 ## 7. Assumptions and limitations
 
 * **Roll-limit model (section 4).**
-  * CPGS computes each visit's sky PAs once, for the planned mid-visit. The PAs are held for the whole visit and are
-    not recomputed if the visit moves within its buffer.
-  * Rolls A and B alternate within one visit, so both sky PAs use the same planned mid-visit and must stay reachable
+  * CPGS computes each RDI sequence's sky PAs once, for the planned mid-sequence. The PAs are held for the whole RDI sequence and are
+    not recomputed if the RDI sequence moves within its buffer.
+  * Rolls A and B alternate within one RDI sequence, so both sky PAs use the same planned mid-sequence and must stay reachable
     over the same span.
   * The guideline tables assume a symmetric buffer ±U; the calculator accepts separate early and late shifts.
-  * The visit span plus buffer must lie inside the FOR.
+  * The RDI sequence span plus buffer must lie inside the FOR.
   * Any additional attitude margin CPGS or the observatory reserves inside ±15° is not included; subtract it from 15°.
-* **Fixed-PA model (section 5).** Both PAs alternate within one visit and are held exactly over its whole possible
+* **Fixed-PA model (section 5).** Both PAs alternate within one RDI sequence and are held exactly over its whole possible
   execution span, which must lie inside the FOR. The same roll-margin caveat applies.
 
 * **Observatory position.** It is taken at the Sun–Earth L2 point, as in `getL2Positions`. Roman's real halo orbit
