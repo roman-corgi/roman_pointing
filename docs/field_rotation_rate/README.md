@@ -191,15 +191,13 @@ Eccentricity is the only significant error of the circular model; it does not af
 
 ## 3. Figures
 
-**[pa_v3_rate_geometry_diagram.png](pa_v3_rate_geometry_diagram.png)**:
+**[pa_v3_rate_geometry_diagram.png](pa_v3_rate_geometry_diagram.png)**: Roman at the center of the celestial sphere,
+using the example β = 45°, Δ = 60°, ε = 69°.
 
-* (a) Roman at the center of the celestial sphere, using the example β = 45°, Δ = 60°, ε = 69°.
-  * Lines of sight run from Roman to the target and to the Sun. ε is the shaded angle between them at Roman.
-  * β is measured along the target's meridian, and Δ along the ecliptic.
-  * The great circle from the target to the Sun sets +V3 on the sky, and θ is +V3 measured from ecliptic north.
-  * At the Sun, its motion along the ecliptic is shown together with the part that crosses the target–Sun arc.
-* (b) |rate| as a function of Sun angle ε and ecliptic latitude, with the FOR marked. Each target moves along a
-  horizontal line between ε = |β| and 180° − |β| every half year.
+* Lines of sight run from Roman to the target and to the Sun. ε is the shaded angle between them at Roman.
+* β is measured along the target's meridian, and Δ along the ecliptic.
+* The great circle from the target to the Sun sets +V3 on the sky, and θ is +V3 measured from ecliptic north.
+* At the Sun, its motion along the ecliptic is shown together with the part that crosses the target–Sun arc.
 
 ![diagram](pa_v3_rate_geometry_diagram.png)
 
@@ -288,15 +286,12 @@ The last line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-
 
 **Reading the plot** ([roll_limits_example.png](roll_limits_example.png)):
 
-* **Panel (a)** plots the roll angle in relation to the allowed ±15° envelope around the nominal attitude, evaluated at each time in the execution time window.
-  * The lines slope upward because PA_V3 increases for β < 0.
-  * The dashed lines are the limiting rolls. The −13.02° roll specified to CPGS translates to −15° at the start of the span (earliest start),
-    and the +13.10° roll reaches +15° at its end (latest end). So the negative roll is limited by running early, and
-    the positive roll by running late.
-  * The thin lines at ±13° (rolls A and B) are an illustration. They lie just inside the limits, reaching ±15° at
-    3.8 days before and 3.9 days after mid-sequence.
-* **Panel (b)** shows the symmetric limit vs. allowed start shift U for several RDI sequence durations. D = 1.5 days with
-  U = 3 days gives ±13.02°. Each extra day of U costs about 0.52° of roll, and each extra day of D about 0.26°.
+* The plot shows the actual roll angle relative to the allowed ±15° envelope around the nominal attitude, evaluated at
+  each time in the execution time window, for the two limiting requested rolls.
+* The lines slope upward because PA_V3 increases for β < 0.
+* The −13.02° roll specified to CPGS translates to −15° at the start of the span (earliest start), and the +13.10° roll
+  reaches +15° at its end (latest end). So the negative roll is limited by running early, and the positive roll by
+  running late.
 * **One-sided shift.** If the start can only slip later (`--early 0 --late 3`), the negative roll is limited only by
   the RDI sequence length, and the allowed range widens to −14.61° to +13.10°.
 

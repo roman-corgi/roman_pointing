@@ -32,7 +32,7 @@ import numpy as np
 from astropy.time import Time
 from matplotlib.colors import LinearSegmentedColormap
 
-from field_rotation_rate import AXIS, BLUE_RAMP, INK, INK2, KEEPOUT, MUTED, SERIES, SURFACE  # chart style
+from field_rotation_rate import AXIS, BLUE_RAMP, INK, INK2, KEEPOUT, SERIES, SURFACE  # chart style
 from roman_pointing.field_rotation import (
     ROLL_MAX,
     SUN_ANG_MAX,
@@ -45,7 +45,7 @@ from roman_pointing.roman_observability import get_target_coords
 
 # README worked example: epsilon Eridani, January 2027
 EXAMPLE = {"target": "eps Eri", "start": "2027-01-19T00:00:00", "duration": 1.5, "early": 3.0, "late": 3.0,
-           "name": "ε Eridani", "offsets": {"A": -13.0, "B": +13.0}, "filename": "roll_limits_example.png"}
+           "name": "ε Eridani", "filename": "roll_limits_example.png"}
 
 
 def resolve_target(name):
@@ -160,9 +160,9 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
             "sun_ang": (drift["sun_ang"].min(), drift["sun_ang"].max()), "rate": drift["rate"]}
 
 
-def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.0, name=None, offsets=None,
+def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.0, name=None,
                             filename="roll_limits_target.png"):
-    """Needed roll vs. execution time for a specific target and RDI sequence, and the maximum |roll| vs. start shift.
+    """Needed roll vs. execution time for the limiting requested rolls of a specific target and RDI sequence.
 
     Args:
         outdir (str):
@@ -181,8 +181,6 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
             Days the start may move later than requested
         name (str):
             Target name for the plot title; defaults to the coordinates
-        offsets (dict):
-            Optional requested rolls to draw for illustration, e.g. {"A": -13.0, "B": 13.0}
         filename (str):
             Output file name
     """
@@ -192,16 +190,12 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
     res = roll_limits_for_target(ra, dec, start, duration, early, late)
     a_min, a_max = res["a_min"], res["a_max"]
 
-    # one dense grid covers panel (a) and the start shifts up to 4 d in panel (b)
-    durations = sorted({0.5, 1.0, duration, 3.0})
-    t_lim = max(half + max(early, late) + 1.5, max(durations) / 2 + 4) + 0.1
-    t = np.linspace(-t_lim, t_lim, int(round(200 * t_lim)) + 1)
-    s = pa_v3_drift(ra, dec, t_mid, t)["s"]
     t_plot = (-half - early - 1.5, half + late + 1.5)
-    in_plot = (t >= t_plot[0]) & (t <= t_plot[1])
-    y_lim = max(19.5, ROLL_MAX + np.abs(s[in_plot]).max() + 1)
+    t = np.linspace(t_plot[0] - 0.2, t_plot[1] + 0.2, int(round(200 * (t_plot[1] - t_plot[0] + 0.4))) + 1)
+    s = pa_v3_drift(ra, dec, t_mid, t)["s"]
+    y_lim = max(19.5, ROLL_MAX + np.abs(s).max() + 1)
 
-    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(14, 5.8), gridspec_kw={"width_ratios": [1.5, 1]})
+    fig, ax = plt.subplots(figsize=(9, 5.8))
     ax.axvspan(-half - early, half + late, color=KEEPOUT, lw=0, zorder=0)
     ax.axvspan(-half, half, color=BLUE_RAMP[0], lw=0, zorder=0)
     ax.text(0, 0.03, f"requested RDI\nsequence ({duration:g} d)", ha="center", va="bottom", fontsize=9, color=INK2,
@@ -213,21 +207,10 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
     for x in [-ROLL_MAX, ROLL_MAX]:
         ax.axhline(x, color=INK, lw=1.2)
     in_span = (t >= -half - early) & (t <= half + late)
-    for k, (lim, c) in enumerate(zip([a_min, a_max], [SERIES[0], SERIES[1]])):
-        if offsets is not None:
-            name_k, off = list(offsets.items())[k]
-            need = off + s
-            ax.plot(t, need, color=c, lw=1.2, alpha=0.6, label=f"roll {name_k} = {off:+.0f}° (illustration)")
-            bad = np.abs(need) > ROLL_MAX
-            ax.plot(t, np.where(bad, need, np.nan), color=c, lw=5, alpha=0.25, solid_capstyle="butt")
-            for j in np.flatnonzero(np.diff(bad.astype(int)) != 0):
-                if t_plot[0] <= t[j] <= t_plot[1]:
-                    ax.plot(t[j], need[j], "o", ms=6, color=c, mec=SURFACE, mew=1.2, zorder=5)
-                    ax.annotate(f"{t[j]:+.1f} d", (t[j], need[j]), xytext=(0, 10 if off > 0 else -16),
-                                textcoords="offset points", ha="center", fontsize=9, color=INK2)
+    for lim, c in zip([a_min, a_max], [SERIES[0], SERIES[1]]):
         # limiting roll: its needed roll just reaches ±15° at an end of the execution span
         need = lim + s
-        ax.plot(t, need, color=c, lw=2.2, ls="--", label=f"limit {lim:+.2f}°")
+        ax.plot(t, need, color=c, lw=2.2, label=f"requested roll {lim:+.2f}°")
         j = np.flatnonzero(in_span)[np.argmax(np.abs(need[in_span]))]
         ax.plot(t[j], need[j], "o", ms=8, color=c, mec=INK, mew=1.2, zorder=6)
     ax.text(0, 0.57, f"Allowed requested rolls over the span:\n{a_min:+.2f}° to {a_max:+.2f}°", ha="center",
@@ -238,38 +221,8 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
     ax.set_xlabel(f"Execution time relative to the planned mid-sequence, {t_mid.strftime('%Y-%m-%d %H:%M')} UTC (days)")
     ax.set_ylabel("Actual roll offset relative to nominal attitude (deg)")
     label = name if name else f"RA {ra:.3f}°, Dec {dec:+.3f}°"
-    ax.set_title(f"(a) {label} (β = {res['beta']:.1f}°, |rate| ≈ {abs(res['rate']):.2f}°/d): thick = beyond ±15°",
-                 fontsize=10.5, loc="left")
+    ax.set_title(f"{label} (β = {res['beta']:.1f}°, |rate| ≈ {abs(res['rate']):.2f}°/d)", fontsize=10.5, loc="left")
     ax.legend(loc="center right", fontsize=9)
-
-    # symmetric limit for a half-span H: the requested roll must absorb max(s) and min(s) over |t| <= H
-    shifts = np.linspace(0, 4, 81)
-    sym_all = []
-    for dur, c in zip(durations, [BLUE_RAMP[2], BLUE_RAMP[4], BLUE_RAMP[6], BLUE_RAMP[8]]):
-        sym = [min(ROLL_MAX - s[np.abs(t) <= dur / 2 + b].max(), ROLL_MAX + s[np.abs(t) <= dur / 2 + b].min())
-               for b in shifts]
-        sym_all += sym
-        ax2.plot(shifts, sym, color=c, label=f"D = {dur:g} d")
-    if offsets is not None:
-        r = abs(list(offsets.values())[0])
-        ax2.axhline(r, color=MUTED, lw=1, ls="--")
-        ax2.text(0.05, r + 0.15, f"±{r:g}° (rolls {', '.join(offsets)})", fontsize=8.5, color=INK2)
-    y_min = min(9, np.floor(min(sym_all)) - 0.5)
-    if early == late:
-        sym_lim = min(a_max, -a_min)
-        ax2.axvline(early, color=MUTED, lw=1, ls=":")
-        ax2.plot(early, sym_lim, "o", ms=8, color=BLUE_RAMP[2 + 2 * durations.index(duration)], mec=INK, mew=1.2,
-                 zorder=5)
-        ax2.annotate(f"±{sym_lim:.2f}°", (early, sym_lim), xytext=(8, 4), textcoords="offset points", fontsize=9,
-                     color=INK, bbox=dict(facecolor=SURFACE, alpha=0.9, lw=0, pad=1))
-        ax2.text(early + 0.05, y_min + 0.2, f"this RDI sequence\n(U = {early:g} d)", fontsize=8.5, color=INK2)
-    ax2.set_xlim(0, 4)
-    ax2.set_ylim(y_min, 15.2)
-    ax2.set_xlabel("Allowed shift of the start, ±U (days)")
-    ax2.set_ylabel("Maximum symmetric |roll| (deg)")
-    ax2.set_title("(b) Same target and dates: maximum |roll| vs. allowed\nstart shift and RDI sequence duration",
-                  fontsize=10.5, loc="left")
-    ax2.legend(loc="lower left", fontsize=9)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, filename), dpi=150)
     plt.close(fig)

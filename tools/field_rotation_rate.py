@@ -238,7 +238,7 @@ def plot_rate_map(outdir):
 
 
 def plot_geometry_diagram(outdir):
-    """Diagram of the Sun-target geometry that sets the PA_V3 rate, with rate map in (eps, beta).
+    """Diagram of the Sun-target geometry that sets the PA_V3 rate.
 
     Args:
         outdir (str):
@@ -265,7 +265,7 @@ def plot_geometry_diagram(outdir):
         t = q - np.dot(q, p) * p
         return t / np.linalg.norm(t)
 
-    fig, (ax, ax_map) = plt.subplots(1, 2, figsize=(15, 7.6), gridspec_kw={"width_ratios": [1, 1.15]})
+    fig, ax = plt.subplots(figsize=(8.5, 7.6))
     ax.set_aspect("equal")
     ax.axis("off")
     ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=AXIS, lw=1))
@@ -302,7 +302,7 @@ def plot_geometry_diagram(outdir):
             zorder=4)
 
     # beta along the target's meridian, Delta along the ecliptic (both measured on the sphere)
-    for a_pt, b_pt, lab, off in [(F, T, "β", [-0.07, 0.0]), (F, S_main, "Δ = λ☉ − λ", [0.0, -0.06])]:
+    for a_pt, b_pt, lab, off in [(F, T, "β", [-0.07, 0.0]), (F, S_main, r"Δ = $\mathregular{\lambda_\odot}$ − λ", [0.0, -0.06])]:
         pts = np.array([proj(p) for p in arc(a_pt, b_pt)])
         ax.plot(pts[:, 0], pts[:, 1], color=INK2, lw=2.2, zorder=2)
         ax.text(*pts[50] + off, lab, fontsize=12, color=INK, ha="center", va="center")
@@ -320,7 +320,7 @@ def plot_geometry_diagram(outdir):
     ax.plot(*proj(T), "*", ms=18, color=SERIES[1], mec=SURFACE, mew=1, zorder=6)
     ax.text(*proj(T) + [-0.05, 0.04], "target\n(λ, β)", fontsize=10.5, color=INK, ha="right")
     ax.plot(*proj(S_main), "o", ms=13, color=SERIES[3], mec=SURFACE, mew=1.5, zorder=6)
-    ax.text(*proj(S_main) + [0.0, -0.06], "Sun (λ☉, 0)", fontsize=10.5, color=INK, ha="center", va="top")
+    ax.text(*proj(S_main) + [0.0, -0.06], r"Sun ($\mathregular{\lambda_\odot}$, 0)", fontsize=10.5, color=INK, ha="center", va="top")
 
     # at T: ecliptic north and +V3 (toward the Sun) on the sky, and the angle theta between them
     pT = proj(T)
@@ -351,9 +351,10 @@ def plot_geometry_diagram(outdir):
     ax.annotate("", xy=pS + scale * proj(v_perp), xytext=pS,
                 arrowprops=dict(arrowstyle="-|>", color=SERIES[1], lw=2), annotation_clip=False)
     ax.plot(*np.c_[pS + scale * proj(v_perp), pS + scale * proj(v)], color=MUTED, lw=0.8, ls=":")
-    ax.text(*(pS + scale * proj(v)) + [0.02, -0.02], "Sun's motion\nλ̇☉ ≈ 0.986°/day",
+    ax.text(*(pS + scale * proj(v)) + [0.02, -0.02], "Sun's motion\n" r"$\mathregular{\dot{\lambda}_\odot}$ ≈ 0.986°/day",
             fontsize=10, color=INK, va="top")
-    ax.text(*(pS + scale * proj(v_perp)) + [0.08, 0.16], "part across the\ntarget–Sun arc:\nλ̇☉ sin β / sin ε",
+    ax.text(*(pS + scale * proj(v_perp)) + [0.08, 0.16],
+            "part across the\ntarget–Sun arc:\n" r"$\mathregular{\dot{\lambda}_\odot}$ sin β / sin ε",
             fontsize=10, color=SERIES[1], va="bottom",
             bbox=dict(facecolor=SURFACE, alpha=0.85, lw=0, pad=1))
 
@@ -363,46 +364,10 @@ def plot_geometry_diagram(outdir):
             "As the Sun moves along the ecliptic, only its motion across that arc swings the arc,\n"
             "and seen from the target (a distance ε away) the arc turns at",
             fontsize=10, color=INK2, va="top")
-    ax.text(-1.05, -1.38, "dθ/dt = −λ̇☉ sin β / sin²ε", fontsize=14, color=INK, va="top")
+    ax.text(-1.05, -1.38, r"dθ/dt = −$\mathregular{\dot{\lambda}_\odot}$ sin β / sin²ε", fontsize=14, color=INK, va="top")
     ax.set_xlim(-1.12, 1.12)
     ax.set_ylim(-1.5, 1.12)
-    ax.set_title("(a) Geometry: Roman at the center of the celestial sphere", loc="left")
-
-    # rate map in (eps, beta)
-    ax = ax_map
-    eps = np.linspace(0, 180, 721)
-    beta = np.linspace(0, 90, 361)
-    E, Bm = np.meshgrid(eps, beta)
-    rate = SUN_RATE * np.sin(np.radians(Bm)) / np.sin(np.radians(E)) ** 2
-    rate = np.where((E >= Bm) & (E <= 180 - Bm), rate, np.nan)
-    cmap = LinearSegmentedColormap.from_list("blue_seq", BLUE_RAMP)
-    levels = np.arange(0, 1.31, 0.1)
-    ax.grid(False)
-    ax.set_facecolor(KEEPOUT)
-    cf = ax.contourf(E, Bm, rate, levels=levels, cmap=cmap, extend="max")
-    cs = ax.contour(E, Bm, rate, levels=[0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 2], colors=INK, linewidths=0.7)
-    for txt in ax.clabel(cs, fmt="%g", fontsize=8, colors=INK):
-        txt.set_bbox(dict(facecolor=SURFACE, alpha=0.8, lw=0, pad=0.5))
-    ax.axvspan(0, SUN_ANG_MIN, color=SURFACE, alpha=0.55, lw=0)
-    ax.axvspan(SUN_ANG_MAX, 180, color=SURFACE, alpha=0.55, lw=0)
-    for x in [SUN_ANG_MIN, SUN_ANG_MAX]:
-        ax.axvline(x, color=INK, lw=1.2)
-    ax.text(90, 91, "field of regard", ha="center", va="bottom", fontsize=9, color=INK)
-    ax.text(27, 91, "keep-out", ha="center", va="bottom", fontsize=9, color=INK2)
-    ax.text(153, 91, "keep-out", ha="center", va="bottom", fontsize=9, color=INK2)
-    ax.text(14, 62, "ε < |β|\nimpossible", fontsize=8.5, color=INK2, ha="center")
-    ax.text(166, 62, "ε > 180° − |β|\nimpossible", fontsize=8.5, color=INK2, ha="center")
-    ax.set_xlim(0, 180)
-    ax.set_ylim(0, 90)
-    ax.set_xticks(np.arange(0, 181, 30))
-    ax.set_xlabel("Sun–target angle ε (deg)")
-    ax.set_ylabel("Ecliptic latitude |β| (deg)")
-    ax.set_title("(b) |dPA$_\\mathrm{V3}$/dt| = λ̇☉ |sin β| / sin²ε  (deg/day); each target moves\n"
-                 "horizontally between ε = |β| and 180° − |β| once per half year", loc="left",
-                 fontsize=10, pad=18)
-    cb = fig.colorbar(cf, ax=ax, pad=0.02, ticks=[0, 0.25, 0.5, 0.75, 1.0, 1.25])
-    cb.outline.set_edgecolor(AXIS)
-    cb.set_label("deg/day", color=INK2)
+    ax.set_title("Geometry: Roman at the center of the celestial sphere", loc="left")
 
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, "pa_v3_rate_geometry_diagram.png"), dpi=150)
