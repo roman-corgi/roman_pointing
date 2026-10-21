@@ -22,11 +22,10 @@
 
 * **Viewing direction.** In an EXCAM data frame, the line of sight to the sky goes into the page.
 * **Observatory axes.** At all times and for all attitudes, the orientations of the observatory vectors Y_OBS and Z_OBS (V2 and V3 in
-  Science Center terminology) remain fixed in the EXCAM frame. Over the course of a year, on a given target, the sky scene, North vector, and East vector rotate with respect to the EXCAM frame. 
-* **Field orientation.** At the nominal attitude the North angle in this example, the North Angle PA_APER is -90°. The position angle of V3, PA_V3, is offset from PA_APER by approximately 150°. 
-* **SIAF orientation angle.** The orientation of V3 on EXCAM is determined by the instrument boresight calibration. The SIAF parameter V3IdlYAngle encodes this as the angle between V3 and CGI line-of-sight Y axis that coincides with EXCAM -Y. The measured value of V3IdlYAngle is close to -30°.
-* **Roll offset.** A positive roll offset causes the sky scene to rotate counterclockwise in
-  the EXCAM data frame. This decreases the position angle of Z_OBS (V3): the +10° offset on the right lowers both
+  Science Center terminology) remain fixed in the EXCAM frame. Over the course of a year, on a given target, the sky scene rotates. 
+* **Field orientation.** PA_V3 is the position angle of V3 relative to celestial North. At the nominal attitude in this example, the EXCAM North Angle, PA_APER, is -90°. PA_V3 is offset from PA_APER by a constant angle of approximately 150°. 
+* **SIAF orientation parameter.** The orientation of V3 on EXCAM is determined by the instrument boresight calibration. The SIAF parameter V3IdlYAngle encodes this as the angle between V3 and CGI line-of-sight Y axis that coincides with EXCAM -Y. The measured value of V3IdlYAngle is close to -30°.
+* **Roll offset.** A positive roll offset causes the sky scene to rotate counterclockwise in the EXCAM data frame. This decreases the position angle of Z_OBS (V3): the +10° offset on the right lowers both
   PA_V3 and PA_APER by 10°.
 
 </td>
