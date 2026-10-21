@@ -496,7 +496,8 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
 * **Observatory position.** It is taken at the Sun–Earth L2 point, as in `getL2Positions`. Roman's real halo orbit
   probably displaces the Sun direction by a few tenths of a degree with a ~6-month period. That would change the rate by
   ≲ 0.01°/day, which matters only in relative terms for very-low-|β| targets, whose rates are ~0.1°/day. This is an
-  order-of-magnitude estimate; it has not been checked against the Horizons Roman ephemeris used in `drive_cpgs.py`.
+  order-of-magnitude estimate; it has not been checked against the JPL Horizons Roman orbit (`-211`), which
+  `calcRomanAngles` accepts as `r_obs_G` (see `Notebooks/roman_pointing_demo.ipynb`).
 * **EXCAM aperture offset.** `calcRomanAngles` points the boresight (V1) at the target, and all PAs here are measured
   there. In practice the CGI aperture is placed on the target. The in-flight SIAF (`roman_siaf_inflight_20261013.xml`,
   aperture `CGI_CEN`) puts it at (V2, V3) = (−1103.7″, −841.3″), δ = 0.386° from V1. CPGS evaluates PAs with the
