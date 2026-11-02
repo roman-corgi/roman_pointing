@@ -102,6 +102,18 @@ def calculate_roman_EXCAMangles(target, ts_targ):
         target, ts_targ, getL2Positions(ts_targ)
     )
 
+    # Apply EXCAM-specific offsets to the pointing angles
+    excam_yaw_offset = 0.4 * u.deg
+    excam_pitch_offset = 30 * u.deg
+    yaw_rad = excam_yaw_offset.to(u.rad).value
+    pitch_rad = excam_pitch_offset.to(u.rad).value
+    R_excam = np.matmul(
+        rotMat(3, pitch_rad),
+        np.matmul(rotMat(1, yaw_rad), rotMat(3, -pitch_rad)),
+    )
+    B_C_I = np.dstack([np.matmul(R_excam, B_C_I[:,:,j]) for j in range(B_C_I.shape[2])])
+
+
     PA_Z = getRomanPositionAngle(B_C_I)
     PA_EXCAM_Y = getEXCAMPositionAngle(B_C_I)
 
