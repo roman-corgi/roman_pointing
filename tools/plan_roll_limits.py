@@ -17,6 +17,10 @@ Usage:
   # same, resolving the target by name (CORGIDB, then SIMBAD) instead of --ra/--dec
   python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
       --duration 1.5 --early 3 --late 3
+  # same, with the EXCAM aperture on the target, Roman's Horizons trajectory and velocity aberration (PA_V3 as
+  # used by CPGS and the observation plans)
+  python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
+      --duration 1.5 --early 3 --late 3 --aperture CGI_CEN --ephemeris horizons --aberration
   # generic roll-limit figures, the README worked example, and the guideline table
   python tools/plan_roll_limits.py --figures -o docs/field_rotation_rate
 
@@ -42,6 +46,7 @@ from roman_pointing.field_rotation import (
     pa_v3_drift,
 )
 from roman_pointing.roman_observability import get_target_coords
+from roman_pointing.roman_pointing import getSIAFAperture
 
 # README worked example: epsilon Eridani, January 2027
 EXAMPLE = {"target": "eps Eri", "start": "2027-01-19T00:00:00", "duration": 1.5, "early": 3.0, "late": 3.0,
@@ -123,7 +128,8 @@ def max_symmetric_roll(beta, halfspan, placement="worst"):
     return np.minimum(hi, -lo)[inside].min()
 
 
-def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
+def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, aperture=None, ephemeris="L2",
+                           aberration=False):
     """Allowed requested roll offsets and reachable fixed sky PA_V3 for a specific target and RDI sequence.
 
     Uses roman_pointing with the solar ephemeris. A fixed sky PA P needs a roll PA_nom(t) - P at time t, so it is
@@ -144,6 +150,12 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
             Days the start may move earlier than requested
         late (float):
             Days the start may move later than requested
+        aperture (dict):
+            Aperture from getSIAFAperture() placed on the target, or None for V1 (see pa_v3_drift)
+        ephemeris (str):
+            Observatory position, 'L2' or 'horizons' (see pa_v3_drift)
+        aberration (bool):
+            Include the velocity aberration of the target and Sun directions (see pa_v3_drift)
 
     Returns:
         dict:
@@ -152,7 +164,7 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
     """
     t_mid = Time(start, scale="utc") + duration / 2 * u.day
     dt = np.linspace(-(duration / 2 + early), duration / 2 + late, 241)
-    drift = pa_v3_drift(ra, dec, t_mid, dt)
+    drift = pa_v3_drift(ra, dec, t_mid, dt, aperture, ephemeris, aberration)
     s, pa_mid = drift["s"], drift["pa_mid"]
     a_min, a_max = -ROLL_MAX - s.min(), ROLL_MAX - s.max()
     return {"a_min": a_min, "a_max": a_max, "pa_mid": pa_mid, "pa_lo": (pa_mid - a_max) % 360,
@@ -161,7 +173,7 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0):
 
 
 def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.0, name=None,
-                            filename="roll_limits_target.png"):
+                            filename="roll_limits_target.png", aperture=None, ephemeris="L2", aberration=False):
     """Needed roll vs. execution time for the limiting requested rolls of a specific target and RDI sequence.
 
     Args:
@@ -183,16 +195,22 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
             Target name for the plot title; defaults to the coordinates
         filename (str):
             Output file name
+        aperture (dict):
+            Aperture from getSIAFAperture() placed on the target, or None for V1 (see pa_v3_drift)
+        ephemeris (str):
+            Observatory position, 'L2' or 'horizons' (see pa_v3_drift)
+        aberration (bool):
+            Include the velocity aberration of the target and Sun directions (see pa_v3_drift)
     """
     half = duration / 2
     t_start = Time(start, scale="utc")
     t_mid = t_start + half * u.day
-    res = roll_limits_for_target(ra, dec, start, duration, early, late)
+    res = roll_limits_for_target(ra, dec, start, duration, early, late, aperture, ephemeris, aberration)
     a_min, a_max = res["a_min"], res["a_max"]
 
     t_plot = (-half - early - 1.5, half + late + 1.5)
     t = np.linspace(t_plot[0] - 0.2, t_plot[1] + 0.2, int(round(200 * (t_plot[1] - t_plot[0] + 0.4))) + 1)
-    s = pa_v3_drift(ra, dec, t_mid, t)["s"]
+    s = pa_v3_drift(ra, dec, t_mid, t, aperture, ephemeris, aberration)["s"]
     y_lim = max(19.5, ROLL_MAX + np.abs(s).max() + 1)
 
     fig, ax = plt.subplots(figsize=(9, 5.8))
@@ -325,6 +343,14 @@ if __name__ == "__main__":
     ap.add_argument("--late", type=float, default=0.0, help="Days the start may move later than requested")
     ap.add_argument("--pa", type=float, nargs=2, metavar=("PA1", "PA2"),
                     help="Check two requested fixed sky PA_V3 values (deg) against the reachable range")
+    ap.add_argument("--aperture", type=str, metavar="NAME",
+                    help="SIAF aperture placed on the target, e.g. CGI_CEN; PA_V3 is then the local PA_V3 at the "
+                         "aperture, as used by CPGS (default: V1 on the target)")
+    ap.add_argument("--ephemeris", choices=["L2", "horizons"], default="L2",
+                    help="Observatory position: ideal L2 point or Roman's JPL Horizons trajectory (default: L2)")
+    ap.add_argument("--aberration", action="store_true",
+                    help="Include the velocity aberration of the target and Sun directions (PA_V3 in the catalog frame, "
+                         "as in the observation plans)")
     ap.add_argument("--name", type=str, help="Target name for the plot title (default: --target)")
     ap.add_argument("--plot", action="store_true", help="Also plot needed roll vs. execution time for this RDI sequence")
     ap.add_argument("--figures", action="store_true",
@@ -361,7 +387,9 @@ if __name__ == "__main__":
         args.name = args.name or args.target
     if args.ra is None or args.dec is None or args.start is None:
         ap.error("--start and either --target or --ra/--dec are required unless --figures is given")
-    res = roll_limits_for_target(args.ra, args.dec, args.start, args.duration, args.early, args.late)
+    aperture = getSIAFAperture(args.aperture) if args.aperture else None
+    res = roll_limits_for_target(args.ra, args.dec, args.start, args.duration, args.early, args.late, aperture,
+                                 args.ephemeris, args.aberration)
     print(f"Target beta = {res['beta']:.2f} deg, Sun angle {res['sun_ang'][0]:.1f}-{res['sun_ang'][1]:.1f} deg, "
           f"dPA_V3/dt at mid-sequence = {res['rate']:+.3f} deg/day")
     print(f"Allowed requested roll offsets (applyRollAngle sense): {res['a_min']:+.2f} to {res['a_max']:+.2f} deg; "
@@ -388,5 +416,6 @@ if __name__ == "__main__":
         slug = re.sub(r"[^0-9a-z]+", "_", (args.name or "target").lower()).strip("_") or "target"
         filename = f"roll_limits_{slug}.png"
         plot_target_roll_limits(outdir, args.ra, args.dec, args.start, args.duration, args.early, args.late,
-                                name=args.name, filename=filename)
+                                name=args.name, filename=filename, aperture=aperture, ephemeris=args.ephemeris,
+                                aberration=args.aberration)
         print(f"Figure written to {os.path.join(outdir, filename)}")

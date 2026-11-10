@@ -25,7 +25,11 @@ from astropy.time import Time
 from roman_pointing.roman_pointing import (
     calcRomanAngles,
     getL2Positions,
+    getL2Velocities,
     getRomanPositionAngle,
+    getRomanPositions,
+    getRomanVelocities,
+    removeAberration,
 )
 
 SUN_RATE = 0.98565  # mean rate of solar ecliptic longitude (deg/day)
@@ -215,11 +219,11 @@ def fixed_pa_window(beta, placement="worst", max_swing=2 * ROLL_MAX):
     return best
 
 
-def pa_v3_drift(ra, dec, t_mid, dt):
+def pa_v3_drift(ra, dec, t_mid, dt, aperture=None, ephemeris="L2", aberration=False):
     """Change of the nominal PA_V3 relative to t_mid for a specific target.
 
     Computed with calcRomanAngles and getRomanPositionAngle (solar ephemeris, observatory
-    at L2). Proper motion and parallax are neglected.
+    at L2 or on its Horizons trajectory). Proper motion and parallax are neglected.
 
     Args:
         ra (float):
@@ -230,11 +234,23 @@ def pa_v3_drift(ra, dec, t_mid, dt):
             Reference time, e.g. the planned middle of an RDI sequence
         dt (numpy.ndarray):
             Times relative to t_mid (days); must include 0
+        aperture (dict, optional):
+            Aperture from getSIAFAperture(). If given, the aperture is placed on the
+            target and PA_V3 is the local PA_V3 at the aperture; if None, V1 is on the
+            target.
+        ephemeris (str):
+            Observatory position: 'L2' (getL2Positions) or 'horizons'
+            (getRomanPositions)
+        aberration (bool):
+            If True, compute the physical attitude from the aberrated target and Sun
+            directions (observatory velocity from the same ephemeris), and report
+            PA_V3 in the catalog frame, as the observation plans do. sun_ang is then
+            the apparent Sun angle.
 
     Returns:
         dict:
             s: PA_V3(t) - PA_V3(t_mid) at dt (deg), pa_mid: PA_V3(t_mid) in
-            [0, 360) (deg), sun_ang: Sun angle at dt (deg), rate: dPA_V3/dt at
+            [0, 360) (deg), sun_ang: Sun angle of V1 at dt (deg), rate: dPA_V3/dt at
             t_mid (deg/day), beta: ecliptic latitude (deg)
     """
     ts = t_mid + dt * u.day
@@ -248,8 +264,20 @@ def pa_v3_drift(ra, dec, t_mid, dt):
         frame="icrs",
         obstime=Time("J2000"),
     ).transform_to(BarycentricMeanEcliptic)
-    sun_ang, _, _, B_C_I = calcRomanAngles(target, ts, getL2Positions(ts))
-    pa = np.degrees(np.unwrap(getRomanPositionAngle(B_C_I).value))
+    if ephemeris == "L2":
+        r_obs_G = getL2Positions(ts)
+        v_obs_G = getL2Velocities(ts) if aberration else None
+    elif ephemeris == "horizons":
+        r_obs_G = getRomanPositions(ts)
+        v_obs_G = getRomanVelocities(ts) if aberration else None
+    else:
+        raise ValueError(f"ephemeris must be 'L2' or 'horizons', not {ephemeris!r}")
+    sun_ang, _, _, B_C_I = calcRomanAngles(
+        target, ts, r_obs_G, aperture=aperture, v_obs_G=v_obs_G
+    )
+    if aberration:
+        B_C_I = removeAberration(B_C_I, v_obs_G, aperture)
+    pa = np.degrees(np.unwrap(getRomanPositionAngle(B_C_I, aperture).value))
     pa_mid = np.interp(0, dt, pa)
     return {
         "s": pa - pa_mid,
