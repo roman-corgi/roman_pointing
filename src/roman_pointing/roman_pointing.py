@@ -21,7 +21,7 @@ import scipy.optimize
 from scipy.interpolate import CubicSpline
 
 SIAF_FILE = os.path.join(
-    os.path.dirname(__file__), "data", "roman_siaf_inflight_20261021_CGI.xml"
+    os.path.dirname(__file__), "siaf", "roman_siaf_inflight_20261021_CGI.xml"
 )
 HORIZONS_API = "https://ssd.jpl.nasa.gov/api/horizons.api"
 

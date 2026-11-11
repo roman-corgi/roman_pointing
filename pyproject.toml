@@ -33,7 +33,7 @@ Repository = "https://github.com/roman-corgi/roman_pointing"
 Issues = "https://github.com/roman-corgi/roman_pointing/issues"
 
 [tool.setuptools.package-data]
-roman_pointing = ["data/*.xml"]
+roman_pointing = ["siaf/*.xml"]
 
 [tool.setuptools.dynamic]
 version = {attr = "roman_pointing.__version__"}

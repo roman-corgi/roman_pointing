@@ -6,7 +6,7 @@ blocks are copied byte-for-byte.
 
 Usage:
   python tools/extract_siaf_cgi.py roman_siaf_inflight_20261021.xml \\
-      src/roman_pointing/data/roman_siaf_inflight_20261021_CGI.xml
+      src/roman_pointing/siaf/roman_siaf_inflight_20261021_CGI.xml
 
 """
 

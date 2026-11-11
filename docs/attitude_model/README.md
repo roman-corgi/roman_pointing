@@ -121,7 +121,7 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
 
 * **SIAF extract and reader.** The full SIAF release is 16 MB, almost all of it WFI SpecPars grids, and the public
   pysiaf repository does not yet hold the commissioning SIAF.
-  * `src/roman_pointing/data/roman_siaf_inflight_20261021_CGI.xml` is a 4 kB copy of the release header and its CGI
+  * `src/roman_pointing/siaf/roman_siaf_inflight_20261021_CGI.xml` is a 4 kB copy of the release header and its CGI
     `SiafEntry` blocks, made with `tools/extract_siaf_cgi.py`, and packaged via `[tool.setuptools.package-data]`.
   * `getSIAFAperture(aper_name="CGI_CEN", siaf_file=SIAF_FILE)` returns `V2Ref`, `V3Ref`, `V3IdlYAngle`,
     `VIdlParity` and u_B. The keys match pysiaf's aperture attributes, so a later switch to
