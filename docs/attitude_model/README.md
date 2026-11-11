@@ -515,9 +515,8 @@ pa_v3 = getRomanPositionAngle(removeAberration(B_C_I, v_obs_G, aperture), apertu
 
 ## 8. Open items
 
-* **SIAF source (A).** When a new SIAF release arrives, regenerate the extract, update `SIAF_FILE`, and remove the
-  previous extract. Once pysiaf holds the commissioning SIAF, `getSIAFAperture` can read it and the extract can be
-  removed. 
+* **Future SIAF updates.** When a new SIAF release arrives, regenerate the extract, update `SIAF_FILE`, and remove the
+  previous extract.
   * During science operations, the most recent SIAF will be synced to the public pysiaf repo. It will then be possible to modify `getSIAFAperture` to import the aperture offset and orientation data directly from pysiaf (https://github.com/spacetelescope/pysiaf).       
 * **Residual PA discrepancies.** For both LMC visits the residual PA_plan − PA_nom(t₀) (Table 1, A + B + C) is
   −0.0035°. For the northern visits the residuals in Tables 1 and 3 are +0.001° to +0.003°.
