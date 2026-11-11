@@ -555,7 +555,7 @@ def applyRollAngle(B_C_I, roll_angles, aperture=None):
         aperture (dict, optional):
             Aperture from getSIAFAperture(). If given, roll about the aperture
             reference point direction u_B instead of b_1, so the target stays on the
-            aperture.
+            aperture. Use the same aperture as in calcRomanAngles.
 
     Returns:
         numpy.ndarray(float):
@@ -589,7 +589,10 @@ def getRomanPositionAngle(B_C_I, aperture=None):
         aperture (dict, optional):
             Aperture from getSIAFAperture(). If given, the position angle is the local
             PA_V3 at the aperture reference point, measured about its direction
-            instead of b_1.
+            instead of b_1. Use the same aperture as in calcRomanAngles: for an
+            attitude with V1 on the target, the aperture is 0.386 deg from the target,
+            and its PA_V3 differs from that at the target by up to several degrees near
+            the celestial poles.
 
     Returns:
         astropy.units.Quantity(numpy.ndarray(float)):
@@ -629,7 +632,10 @@ def getEXCAMPositionAngle(B_C_I, aperture=None):
         aperture (dict, optional):
             Aperture from getSIAFAperture(). If given, PA_APER = PA_V3 (local, at the
             aperture) + V3IdlYAngle + 180 deg, since CGI LOS_Y is EXCAM -Y. If None,
-            the nominal offset of 150 deg from PA_V3 is used.
+            PA_V3 at V1 plus the nominal offset of 150 deg is used. Use the same
+            aperture as in calcRomanAngles and applyRollAngle; mixing an attitude with
+            V1 on the target and the aperture here gives errors of up to several
+            degrees near the celestial poles (see getRomanPositionAngle).
 
     Returns:
         astropy.units.Quantity(numpy.ndarray(float)):
