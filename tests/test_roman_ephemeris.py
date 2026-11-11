@@ -16,6 +16,7 @@ from roman_pointing.roman_pointing import (
     getSIAFAperture,
     getSunPositions,
     queryRomanOrbit,
+    queryRomanOrbitSpan,
 )
 
 T0 = Time("2026-10-26T00:00:00", scale="tdb")
@@ -86,17 +87,41 @@ def test_sun_direction():
 
 @pytest.mark.filterwarnings("ignore:ERFA function")
 def test_outside_coverage():
-    ts = Time("2029-06-01T00:00:00") + np.arange(3) * u.day
+    ts = Time("2040-06-01T00:00:00") + np.arange(3) * u.day
     with pytest.warns(UserWarning, match="Horizons query failed"):
         r = getRomanPositions(ts)
     np.testing.assert_allclose(r, getL2Positions(ts))
 
 
+@pytest.mark.filterwarnings("ignore:ERFA function")
+def test_partial_coverage():
+    # times before and after the Horizons coverage get L2, the others Horizons
+    ts = Time(["2026-01-01T00:00:00", "2027-06-01T00:00:00", "2040-01-01T00:00:00"])
+    with pytest.warns(UserWarning, match="2 of 3 times are outside the Horizons table"):
+        r = getRomanPositions(ts)
+    # same orbit to < 1.5 km (the interpolation of a different table span)
+    np.testing.assert_allclose(r[:, 1].value, getRomanPositions(ts[1]).value, rtol=0, atol=1e-8)
+    np.testing.assert_allclose(r[:, [0, 2]], getL2Positions(ts[[0, 2]]), rtol=0, atol=1e-15)
+    with pytest.warns(UserWarning, match="outside the Horizons table"):
+        v = getRomanVelocities(ts)
+    speed = np.linalg.norm(v, axis=0).to_value(u.km / u.s)
+    assert np.all((speed > 29) & (speed < 31.5))
+
+
+def test_query_cache():
+    ts = T0 + np.arange(0, 5) * u.day
+    getRomanPositions(ts)
+    hits = queryRomanOrbitSpan.cache_info().hits
+    getRomanPositions(ts)
+    assert queryRomanOrbitSpan.cache_info().hits == hits + 1
+
+
 def test_pa_v3_drift_ephemeris():
-    args = (150.72, 73.79, Time("2026-10-26T19:00:00"), np.linspace(-1, 1, 5))
-    np.testing.assert_allclose(pa_v3_drift(*args, ephemeris="L2")["s"], pa_v3_drift(*args)["s"], rtol=0, atol=0)
+    args = (150.72, 73.79, Time("2026-10-26T19:00:00"), np.linspace(-1, 1, 5), None)
+    # the default ephemeris is Horizons
+    np.testing.assert_allclose(pa_v3_drift(*args)["s"], pa_v3_drift(*args, ephemeris="horizons")["s"], rtol=0, atol=0)
     horizons = pa_v3_drift(*args, ephemeris="horizons")
-    default = pa_v3_drift(*args)
+    default = pa_v3_drift(*args, ephemeris="L2")
     # differences of a few tenths of a degree at most (docs/attitude_model/README.md, section 4.1)
     assert 0 < abs(horizons["pa_mid"] - default["pa_mid"]) < 1
     assert 0 < np.max(np.abs(horizons["sun_ang"] - default["sun_ang"])) < 1

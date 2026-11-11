@@ -17,6 +17,8 @@ import ipywidgets as widgets
 from roman_pointing.roman_pointing import (
     calcRomanAngles,
     getL2Positions,
+    getRomanPositions,
+    getSIAFAperture,
 )
 
 
@@ -161,12 +163,12 @@ def get_target_coords(target_names):
     return coords
 
 
-def compute_roman_angles(coord, start_date, days, time_step):
+def compute_roman_angles(coord, start_date, days, time_step, aperture="CGI_CEN", ephemeris="horizons"):
     """Calculate Roman Space Telescope pointing angles for a target over time.
 
     Computes the solar angle, yaw, and pitch angles required for Roman to observe
-    a given celestial coordinate over a specified time period, accounting for the
-    telescope's position at the Sun-Earth L2 Lagrange point.
+    a given celestial coordinate over a specified time period. The angles refer to
+    the boresight V1, with the CGI aperture on the target by default.
 
     Args:
         coord (astropy.coordinates.SkyCoord): Target celestial coordinates in
@@ -174,6 +176,11 @@ def compute_roman_angles(coord, start_date, days, time_step):
         start_date (str): Start date in ISO format (e.g., '2027-01-01T00:00:00').
         days (int or float): Duration of observation window in days.
         time_step (int or float): Time interval between calculations in days.
+        aperture (str or None, optional): SIAF aperture placed on the target. None
+            for the boresight V1. Default: 'CGI_CEN'.
+        ephemeris (str, optional): Observatory position: 'horizons' (JPL Horizons
+            orbit of Roman, L2 outside its coverage) or 'L2' (Sun-Earth L2 point).
+            Default: 'horizons'.
 
     Returns:
         tuple: A tuple containing:
@@ -185,16 +192,15 @@ def compute_roman_angles(coord, start_date, days, time_step):
     t0 = Time(start_date, format="isot", scale="utc")
     ts = t0 + np.arange(0, days, time_step) * u.d
 
-    sun_ang, yaw, pitch, _ = calcRomanAngles(
-        coord,
-        ts,
-        getL2Positions(ts),
-    )
+    aper = getSIAFAperture(aperture) if aperture else None
+    r_obs = getRomanPositions(ts) if ephemeris == "horizons" else getL2Positions(ts)
+    sun_ang, yaw, pitch, _ = calcRomanAngles(coord, ts, r_obs, aperture=aper)
 
     return ts, sun_ang, yaw, pitch
 
 
-def compute_keepout(coords_dict, start_date, days, time_step, min_sun=54, max_sun=126):
+def compute_keepout(coords_dict, start_date, days, time_step, min_sun=54, max_sun=126,
+                    aperture="CGI_CEN", ephemeris="horizons"):
     """Determine observability windows for multiple targets based on solar constraints.
 
     Calculates when targets are observable by Roman Space Telescope based on solar
@@ -211,6 +217,10 @@ def compute_keepout(coords_dict, start_date, days, time_step, min_sun=54, max_su
             Default: 54.
         max_sun (int or float, optional): Maximum allowed solar angle in degrees.
             Default: 126.
+        aperture (str or None, optional): SIAF aperture placed on the target, as in
+            compute_roman_angles. Default: 'CGI_CEN'.
+        ephemeris (str, optional): 'horizons' or 'L2', as in compute_roman_angles.
+            Default: 'horizons'.
 
     Returns:
         tuple: A tuple containing:
@@ -225,7 +235,7 @@ def compute_keepout(coords_dict, start_date, days, time_step, min_sun=54, max_su
     ts_global = None
 
     for name, coord in coords_dict.items():
-        ts, sun_ang, _, _ = compute_roman_angles(coord, start_date, days, time_step)
+        ts, sun_ang, _, _ = compute_roman_angles(coord, start_date, days, time_step, aperture, ephemeris)
         solar_angles[name] = sun_ang
         keepout[name] = (sun_ang > min_sun * u.deg) & (sun_ang < max_sun * u.deg)
         if ts_global is None:
@@ -914,7 +924,7 @@ HD 209458
         <p style="margin: 5px 0;">• If a target isn't found, check the spelling or try alternative names</p>
         <p style="margin: 5px 0;">• For <strong>single targets</strong>, you'll see detailed visibility windows with exact transition dates</p>
         <p style="margin: 5px 0;">• For <strong>multiple targets</strong>, you'll see a comparison map showing all targets together</p>
-        <p style="margin: 5px 0;">• Analysis assumes observations from Sun-Earth L2 Lagrange point (Roman's orbit)</p>
+        <p style="margin: 5px 0;">• Analysis uses Roman's orbit from JPL Horizons (the Sun-Earth L2 point outside its coverage), with the CGI aperture on the target</p>
         <p style="margin: 5px 0;">• Processing time increases with more targets and smaller time steps</p>
     </div>
 

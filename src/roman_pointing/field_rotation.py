@@ -29,6 +29,7 @@ from roman_pointing.roman_pointing import (
     getRomanPositionAngle,
     getRomanPositions,
     getRomanVelocities,
+    getSIAFAperture,
     removeAberration,
 )
 
@@ -219,7 +220,7 @@ def fixed_pa_window(beta, placement="worst", max_swing=2 * ROLL_MAX):
     return best
 
 
-def pa_v3_drift(ra, dec, t_mid, dt, aperture=None, ephemeris="L2", aberration=False):
+def pa_v3_drift(ra, dec, t_mid, dt, aperture="CGI_CEN", ephemeris="horizons", aberration=False):
     """Change of the nominal PA_V3 relative to t_mid for a specific target.
 
     Computed with calcRomanAngles and getRomanPositionAngle (solar ephemeris, observatory
@@ -234,13 +235,13 @@ def pa_v3_drift(ra, dec, t_mid, dt, aperture=None, ephemeris="L2", aberration=Fa
             Reference time, e.g. the planned middle of an RDI sequence
         dt (numpy.ndarray):
             Times relative to t_mid (days); must include 0
-        aperture (dict, optional):
-            Aperture from getSIAFAperture(). If given, the aperture is placed on the
-            target and PA_V3 is the local PA_V3 at the aperture; if None, V1 is on the
-            target.
+        aperture (str, dict or None):
+            SIAF aperture name or aperture from getSIAFAperture(), placed on the
+            target; PA_V3 is then the local PA_V3 at the aperture. If None, V1 is on
+            the target. Default 'CGI_CEN'.
         ephemeris (str):
-            Observatory position: 'L2' (getL2Positions) or 'horizons'
-            (getRomanPositions)
+            Observatory position: 'horizons' (getRomanPositions, the default) or
+            'L2' (getL2Positions)
         aberration (bool):
             If True, compute the physical attitude from the aberrated target and Sun
             directions (observatory velocity from the same ephemeris), and report
@@ -264,6 +265,8 @@ def pa_v3_drift(ra, dec, t_mid, dt, aperture=None, ephemeris="L2", aberration=Fa
         frame="icrs",
         obstime=Time("J2000"),
     ).transform_to(BarycentricMeanEcliptic)
+    if isinstance(aperture, str):
+        aperture = getSIAFAperture(aperture)
     if ephemeris == "L2":
         r_obs_G = getL2Positions(ts)
         v_obs_G = getL2Velocities(ts) if aberration else None

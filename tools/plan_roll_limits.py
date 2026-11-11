@@ -17,10 +17,11 @@ Usage:
   # same, resolving the target by name (CORGIDB, then SIMBAD) instead of --ra/--dec
   python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
       --duration 1.5 --early 3 --late 3
-  # same, with the EXCAM aperture on the target, Roman's Horizons trajectory and velocity aberration (PA_V3 as
-  # used by CPGS and the observation plans)
+  # By default the CGI aperture (CGI_CEN) is on the target, PA_V3 is measured there, and the observatory is on
+  # Roman's JPL Horizons trajectory. Add --aberration for the velocity aberration (PA_V3 in the catalog frame,
+  # as used by the observation plans), or use --aperture none --ephemeris L2 for the boresight V1 at L2:
   python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
-      --duration 1.5 --early 3 --late 3 --aperture CGI_CEN --ephemeris horizons --aberration
+      --duration 1.5 --early 3 --late 3 --aperture none --ephemeris L2
   # generic roll-limit figures, the README worked example, and the guideline table
   python tools/plan_roll_limits.py --figures -o docs/field_rotation_rate
 
@@ -128,7 +129,7 @@ def max_symmetric_roll(beta, halfspan, placement="worst"):
     return np.minimum(hi, -lo)[inside].min()
 
 
-def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, aperture=None, ephemeris="L2",
+def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, aperture="CGI_CEN", ephemeris="horizons",
                            aberration=False):
     """Allowed requested roll offsets and reachable fixed sky PA_V3 for a specific target and RDI sequence.
 
@@ -150,10 +151,10 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, apertu
             Days the start may move earlier than requested
         late (float):
             Days the start may move later than requested
-        aperture (dict):
-            Aperture from getSIAFAperture() placed on the target, or None for V1 (see pa_v3_drift)
+        aperture (str, dict or None):
+            SIAF aperture name or getSIAFAperture() aperture placed on the target, or None for V1 (see pa_v3_drift)
         ephemeris (str):
-            Observatory position, 'L2' or 'horizons' (see pa_v3_drift)
+            Observatory position, 'horizons' or 'L2' (see pa_v3_drift)
         aberration (bool):
             Include the velocity aberration of the target and Sun directions (see pa_v3_drift)
 
@@ -173,7 +174,8 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, apertu
 
 
 def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.0, name=None,
-                            filename="roll_limits_target.png", aperture=None, ephemeris="L2", aberration=False):
+                            filename="roll_limits_target.png", aperture="CGI_CEN", ephemeris="horizons",
+                            aberration=False):
     """Needed roll vs. execution time for the limiting requested rolls of a specific target and RDI sequence.
 
     Args:
@@ -195,10 +197,10 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
             Target name for the plot title; defaults to the coordinates
         filename (str):
             Output file name
-        aperture (dict):
-            Aperture from getSIAFAperture() placed on the target, or None for V1 (see pa_v3_drift)
+        aperture (str, dict or None):
+            SIAF aperture name or getSIAFAperture() aperture placed on the target, or None for V1 (see pa_v3_drift)
         ephemeris (str):
-            Observatory position, 'L2' or 'horizons' (see pa_v3_drift)
+            Observatory position, 'horizons' or 'L2' (see pa_v3_drift)
         aberration (bool):
             Include the velocity aberration of the target and Sun directions (see pa_v3_drift)
     """
@@ -343,11 +345,12 @@ if __name__ == "__main__":
     ap.add_argument("--late", type=float, default=0.0, help="Days the start may move later than requested")
     ap.add_argument("--pa", type=float, nargs=2, metavar=("PA1", "PA2"),
                     help="Check two requested fixed sky PA_V3 values (deg) against the reachable range")
-    ap.add_argument("--aperture", type=str, metavar="NAME",
-                    help="SIAF aperture placed on the target, e.g. CGI_CEN; PA_V3 is then the local PA_V3 at the "
-                         "aperture, as used by CPGS (default: V1 on the target)")
-    ap.add_argument("--ephemeris", choices=["L2", "horizons"], default="L2",
-                    help="Observatory position: ideal L2 point or Roman's JPL Horizons trajectory (default: L2)")
+    ap.add_argument("--aperture", type=str, metavar="NAME", default="CGI_CEN",
+                    help="SIAF aperture placed on the target; PA_V3 is the local PA_V3 at the aperture, as used by "
+                         "CPGS (default: CGI_CEN; 'none' for V1 on the target)")
+    ap.add_argument("--ephemeris", choices=["L2", "horizons"], default="horizons",
+                    help="Observatory position: Roman's JPL Horizons trajectory or the ideal L2 point "
+                         "(default: horizons)")
     ap.add_argument("--aberration", action="store_true",
                     help="Include the velocity aberration of the target and Sun directions (PA_V3 in the catalog frame, "
                          "as in the observation plans)")
@@ -387,7 +390,7 @@ if __name__ == "__main__":
         args.name = args.name or args.target
     if args.ra is None or args.dec is None or args.start is None:
         ap.error("--start and either --target or --ra/--dec are required unless --figures is given")
-    aperture = getSIAFAperture(args.aperture) if args.aperture else None
+    aperture = None if args.aperture.lower() == "none" else getSIAFAperture(args.aperture)
     res = roll_limits_for_target(args.ra, args.dec, args.start, args.duration, args.early, args.late, aperture,
                                  args.ephemeris, args.aberration)
     print(f"Target beta = {res['beta']:.2f} deg, Sun angle {res['sun_ang'][0]:.1f}-{res['sun_ang'][1]:.1f} deg, "

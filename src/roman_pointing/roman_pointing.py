@@ -1,5 +1,8 @@
+import functools
 import os
+import re
 import warnings
+from datetime import datetime
 import xml.etree.ElementTree as ET
 
 import numpy as np
@@ -82,9 +85,8 @@ def queryRomanOrbit(ts, step="1d"):
     """Query JPL Horizons for the barycentric ICRF orbit of Roman around the times ts
 
     Uses astroquery, as in the roman_pointing_demo notebook and the EXOSIMS Roman
-    observatory. The table spans ts in TDB, padded by 2 days for the interpolation.
-    The query is not cached, because the Horizons trajectory of Roman is updated
-    after orbit determination.
+    observatory. The table spans ts in TDB, padded by 2 days for the interpolation,
+    and is clipped to the Horizons coverage of Roman.
 
     Args:
         ts (astropy.time.Time):
@@ -100,13 +102,57 @@ def queryRomanOrbit(ts, step="1d"):
     jd = np.atleast_1d(ts.tdb.jd)
     start = Time(np.floor(jd.min() - 0.5) - 1.5, format="jd", scale="tdb").iso
     stop = Time(np.ceil(jd.max() - 0.5) + 2.5, format="jd", scale="tdb").iso
-    obj = Horizons(
-        id="-211",
-        location="@0",
-        epochs={"start": start, "stop": stop, "step": step},
-    )
 
-    return obj.vectors(refplane="earth", cache=False)
+    return queryRomanOrbitSpan(start, stop, step)
+
+
+@functools.lru_cache(maxsize=64)
+def queryRomanOrbitSpan(start, stop, step):
+    """Query JPL Horizons for the barycentric ICRF orbit of Roman between two times
+
+    Results are cached in memory for the Python session, so that repeated calls for
+    the same span (e.g. one per target) make one query. They are not cached on disk,
+    because the Horizons trajectory of Roman is updated after orbit determination.
+    If the span extends beyond the Horizons coverage, it is clipped to the coverage
+    reported by Horizons. The returned table must not be modified.
+
+    Args:
+        start (str):
+            Start time (TDB, ISO format)
+        stop (str):
+            Stop time (TDB, ISO format)
+        step (str):
+            Sampling of the Horizons table (e.g. '1d', '1h')
+
+    Returns:
+        astropy.table.Table:
+            Table of orbit vectors from Horizons (Horizons times are TDB)
+
+    """
+    for _ in range(3):
+        obj = Horizons(
+            id="-211",
+            location="@0",
+            epochs={"start": start, "stop": stop, "step": step},
+        )
+        try:
+            return obj.vectors(refplane="earth", cache=False)
+        except ValueError as err:
+            # e.g. 'No ephemeris for target ... after A.D. 2028-NOV-08 13:01:09.1826 TD'
+            edge = re.search(
+                r"No ephemeris .* (prior to|after) A\.D\. (\d{4}-\w{3}-\d{2} \d{2}:\d{2}:\d{2})",
+                str(err),
+            )
+            if edge is None:
+                raise
+            t_edge = Time(datetime.strptime(edge.group(2), "%Y-%b-%d %H:%M:%S"), scale="tdb")
+            if edge.group(1) == "prior to":
+                start = (t_edge + 2 * u.s).iso
+            else:
+                stop = (t_edge - 2 * u.s).iso
+            if Time(start, scale="tdb") >= Time(stop, scale="tdb"):
+                raise ValueError(f"No Horizons ephemeris of Roman between {start} and {stop}") from err
+    raise ValueError(f"Horizons query for {start} to {stop} failed")
 
 
 def genRomanOrbitInterpolant(vectors_table):
@@ -146,8 +192,8 @@ def genRomanOrbitInterpolant(vectors_table):
 def getRomanPositions(ts, step="1d"):
     """Retrieve the barycentric position of Roman from the JPL Horizons ephemeris
 
-    Falls back to getL2Positions, with a warning, if the query fails (no network,
-    or ts outside the Horizons coverage).
+    Falls back to getL2Positions, with a warning, if the query fails (no network),
+    and for the times in ts outside the Horizons coverage.
 
     Args:
         ts (astropy.time.Time):
@@ -161,16 +207,33 @@ def getRomanPositions(ts, step="1d"):
 
     """
     try:
-        interpolant = genRomanOrbitInterpolant(queryRomanOrbit(ts, step))
+        vectors_table = queryRomanOrbit(ts, step)
     except Exception as err:
         warnings.warn(f"Horizons query failed ({err}); using the L2 approximation")
         return getL2Positions(ts)
-    xyz = interpolant(np.atleast_1d(ts.tdb.mjd)).T * u.AU
-    roman = SkyCoord(CartesianRepresentation(xyz), frame="icrs").transform_to(
-        BarycentricMeanEcliptic
-    )
+    interpolant = genRomanOrbitInterpolant(vectors_table)
 
-    return roman.cartesian.xyz[:, 0] if ts.isscalar else roman.cartesian.xyz
+    # times outside the table (beyond the Horizons coverage) keep the L2 approximation
+    ts_1d = ts.reshape(-1)
+    mjd = ts_1d.tdb.mjd
+    mjd_table = Time(vectors_table["datetime_jd"].data, format="jd", scale="tdb").mjd
+    covered = (mjd >= mjd_table[0]) & (mjd <= mjd_table[-1])
+    r = getL2Positions(ts_1d)
+    if not covered.all():
+        warnings.warn(
+            f"{(~covered).sum()} of {covered.size} times are outside the Horizons table "
+            f"of Roman ({Time(mjd_table[0], format='mjd', scale='tdb').iso[:16]} to "
+            f"{Time(mjd_table[-1], format='mjd', scale='tdb').iso[:16]} TDB); using the L2 "
+            "approximation for them"
+        )
+    if covered.any():
+        xyz = interpolant(mjd[covered]).T * u.AU
+        roman = SkyCoord(CartesianRepresentation(xyz), frame="icrs").transform_to(
+            BarycentricMeanEcliptic
+        )
+        r[:, covered] = roman.cartesian.xyz
+
+    return r[:, 0] if ts.isscalar else r
 
 
 def getL2Velocities(ts):
@@ -195,7 +258,8 @@ def getRomanVelocities(ts, step="1d"):
     """Retrieve the barycentric velocity of Roman from the JPL Horizons ephemeris
 
     The velocity is the derivative of the cubic spline used by getRomanPositions.
-    Falls back to getL2Velocities, with a warning, if the query fails.
+    Falls back to getL2Velocities, with a warning, if the query fails, and for the
+    times in ts outside the Horizons coverage.
 
     Args:
         ts (astropy.time.Time):
@@ -209,17 +273,32 @@ def getRomanVelocities(ts, step="1d"):
 
     """
     try:
-        interpolant = genRomanOrbitInterpolant(queryRomanOrbit(ts, step))
+        vectors_table = queryRomanOrbit(ts, step)
     except Exception as err:
         warnings.warn(f"Horizons query failed ({err}); using the L2 approximation")
         return getL2Velocities(ts)
-    mjd = np.atleast_1d(ts.tdb.mjd)
-    xyz = CartesianRepresentation(interpolant(mjd).T * u.AU)
-    vxyz = CartesianDifferential(interpolant(mjd, 1).T * u.AU / u.day)
-    roman = SkyCoord(xyz.with_differentials(vxyz), frame="icrs").transform_to(
-        BarycentricMeanEcliptic
-    )
-    v = roman.velocity.d_xyz.to(u.km / u.s)
+    interpolant = genRomanOrbitInterpolant(vectors_table)
+
+    # times outside the table (beyond the Horizons coverage) keep the L2 approximation
+    ts_1d = ts.reshape(-1)
+    mjd = ts_1d.tdb.mjd
+    mjd_table = Time(vectors_table["datetime_jd"].data, format="jd", scale="tdb").mjd
+    covered = (mjd >= mjd_table[0]) & (mjd <= mjd_table[-1])
+    v = getL2Velocities(ts_1d).to(u.km / u.s)
+    if not covered.all():
+        warnings.warn(
+            f"{(~covered).sum()} of {covered.size} times are outside the Horizons table "
+            f"of Roman ({Time(mjd_table[0], format='mjd', scale='tdb').iso[:16]} to "
+            f"{Time(mjd_table[-1], format='mjd', scale='tdb').iso[:16]} TDB); using the L2 "
+            "approximation for them"
+        )
+    if covered.any():
+        xyz = CartesianRepresentation(interpolant(mjd[covered]).T * u.AU)
+        vxyz = CartesianDifferential(interpolant(mjd[covered], 1).T * u.AU / u.day)
+        roman = SkyCoord(xyz.with_differentials(vxyz), frame="icrs").transform_to(
+            BarycentricMeanEcliptic
+        )
+        v[:, covered] = roman.velocity.d_xyz.to(u.km / u.s)
 
     return v[:, 0] if ts.isscalar else v
 

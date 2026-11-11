@@ -198,8 +198,11 @@ def test_excam_pa(aperture, for_targets):
 
 
 def test_pa_v3_drift_aperture(aperture):
-    default = pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5))
-    offset = pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5), aperture)
+    default = pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5), None, "L2")
+    offset = pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5), aperture, "L2")
+    # an aperture name is equivalent to the aperture
+    by_name = pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5), "CGI_CEN", "L2")
+    np.testing.assert_allclose(by_name["s"], offset["s"], rtol=0, atol=0)
     # PA_V3 changes by about V2Ref / tan(eps); the Sun angle of V1 by V3Ref
     v2 = np.radians(aperture["V2Ref"] / 3600)
     expected = np.degrees(v2 / np.tan(np.radians(default["sun_ang"][2])))

@@ -161,8 +161,8 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
 ### 4.1 Effect
 
 `getL2Positions` scales the Earth's barycentric position by the collinear L2 distance. Every Sun direction, Sun angle
-and nominal attitude follows from this position. Roman's Horizons trajectory (`-211`) is available from 2026-09-06
-to 2028-10-25.
+and nominal attitude follows from this position. Roman's Horizons trajectory (`-211`) is available from 2026-08-30
+to 2028-11-08 (as of 2026-11-11; JPL extends and updates it).
 
 * **Position.** Roman is 290,000–840,000 km from the ideal L2 point, so the Sun direction differs by 0.06°–0.31°.
 * **Sun angle and PA_V3.** For 400 random targets at random dates, the Sun angle differs by up to 0.30° (rms 0.15°)
@@ -185,7 +185,12 @@ interpolant of the table, and its evaluation at the requested times.
   2 days. It takes about 1 s per call.
   * The times are TDB, the time scale of Horizons vector tables. Passing UTC strings, as the notebook does, shifts the
     positions by 69 s, about 2,100 km: 0.8″ in Sun angle and 2.8″ in PA_V3 for 11 UMi.
-  * The query is not cached, because the Horizons trajectory of Roman is updated after orbit determination.
+* **`queryRomanOrbitSpan(start, stop, step)`** makes the query for `queryRomanOrbit`.
+  * Its results are cached in memory for the Python session (`functools.lru_cache`), so tools that loop over targets
+    with the same time span make one query. They are not cached on disk (astroquery's `cache=False`), because the
+    Horizons trajectory of Roman is updated after orbit determination.
+  * If the span extends beyond the Horizons coverage, it is clipped to the coverage edge reported in the Horizons
+    error message ("No ephemeris … prior to/after A.D. …") and queried again.
 * **`genRomanOrbitInterpolant(vectors_table)`** is the EXOSIMS function of that name: a `CubicSpline` over MJD, with
   the unit check. The table times are labeled TDB.
   * The spline is within 0.5 km of hourly Horizons values, and allows any `ts`, not only the daily table grid of the
@@ -195,8 +200,10 @@ interpolant of the table, and its evaluation at the requested times.
   * The query is for ICRF vectors, which are converted to ecliptic coordinates with astropy, as `getSunPositions`
     does. EXOSIMS and the notebook use Horizons' own ecliptic or equatorial planes instead; the difference is < 10 km.
 * **`getRomanVelocities(ts, step="1d")`** returns the derivative of the same interpolant (km/s) and is used by change C.
-* **Fallback.** Without a network, or outside the Horizons coverage, both functions warn and return the L2
-  approximation.
+* **Fallback.** Without a network, both functions warn and return the L2 approximation. Times in `ts` outside the
+  Horizons table (beyond the coverage) get the L2 approximation, with a warning, and the other times the Horizons
+  orbit. A span that crosses the coverage edge, like a 2-year observability window, therefore uses Horizons where
+  it can.
 * **Not yet done.** A reader for the FDF OEM predicts used by the SOC would be an offline alternative. Each OEM file
   covers only weeks, so Horizons is the better default.
 
@@ -207,8 +214,10 @@ interpolant of the table, and its evaluation at the requested times.
 * The daily spline agrees with hourly Horizons values to < 1 km.
 * The Sun direction from Roman agrees with Horizons' Sun vector as seen from Roman to < 1″ (0.03″ achieved).
 * `getRomanVelocities` agrees with finite differences of `getRomanPositions` to 10⁻³ km/s.
-* Outside the coverage, the functions warn and return L2 values.
-* `ephemeris="L2"` leaves `pa_v3_drift` unchanged.
+* Outside the coverage, the functions warn and return L2 values. For times on both sides of the coverage edges,
+  only the times outside get L2 values.
+* A repeated call for the same span uses the session cache.
+* `pa_v3_drift` uses the Horizons orbit by default, and `ephemeris="L2"` the L2 point.
 
 ## 5. Change C: velocity aberration
 
@@ -343,7 +352,7 @@ Symbols used in the tables:
 **Table 1. Planned PA_V3: residual PA_plan − PA_nom(t₀), for each model.** A residual of 0 means the model reproduces
 the plan. PA_nom from `pa_v3_drift`; PA_plan is rounded to 0.001° in the OPUP.
 
-| Visit | PA_plan | Default / current | A | B | A + B | A + B + C |
+| Visit | PA_plan | Previous baseline | A | B | A + B | A + B + C |
 |---|---|---|---|---|---|---|
 | CAR-55.1 | 122.989° | −0.2958° | −0.3035° | −0.0014° | −0.0094° | −0.0035° |
 | CAR-55.4 | 127.041° | −0.3043° | −0.3104° | −0.0030° | −0.0094° | −0.0035° |
@@ -351,8 +360,8 @@ the plan. PA_nom from `pa_v3_drift`; PA_plan is rounded to 0.001° in the OPUP.
 
 **Table 2. Roll from nominal at visit begin and end: model prediction vs the OPUP's listed value.**
 
-* "Default / current roll" and "A + B + C roll" are R(t) = PA_nom(t) − PA_plan, with PA_nom from the default
-  (current) model and from model A + B + C.
+* "Previous baseline roll" and "A + B + C roll" are R(t) = PA_nom(t) − PA_plan, with PA_nom from the previous
+  baseline model and from model A + B + C.
 * "OPUP roll" is the "Roll" column of the OPUP timeline at the same time, rounded to 0.001°. Its sign convention is
   not documented. It matches R(t) when the OPUP roll is taken as nominal minus commanded.
 * "Residual" is OPUP roll − A + B + C roll.
@@ -360,7 +369,7 @@ the plan. PA_nom from `pa_v3_drift`; PA_plan is rounded to 0.001° in the OPUP.
 Both rolls grow from about 0 at t₀ at the PA_V3 rate, because PA_plan is held while the nominal attitude follows the
 Sun.
 
-| Visit | Time | Default / current roll | A + B + C roll | OPUP roll | Residual (OPUP − A + B + C) |
+| Visit | Time | Previous baseline roll | A + B + C roll | OPUP roll | Residual (OPUP − A + B + C) |
 |---|---|---|---|---|---|
 | CAR-55.1 | visit begin 04:55:06 | +0.3034° | +0.0111° | +0.008° | −0.0031° |
 | | visit end 05:10:23 | +0.3139° | +0.0216° | +0.018° | −0.0036° |
@@ -370,7 +379,7 @@ Sun.
 | | visit end 05:32:38 | −0.2937° | −0.0249° | −0.024° | +0.0009° |
 
 The residuals are constant over each visit, so the model's roll rate matches the plan's. Their values equal the
-Table 1 residuals for model A + B + C, within the OPUP rounding. The default model would predict rolls 0.27°–0.31°
+Table 1 residuals for model A + B + C, within the OPUP rounding. The previous baseline model would predict rolls 0.27°–0.31°
 from the listed ones.
 
 **Table 3. CGI header and WFI telemetry vs the model (A + B + C).** Output of `tools/compare_header_pa.py` with the
@@ -468,20 +477,37 @@ sun_ang, yaw, pitch, B_C_I = calcRomanAngles(target, ts, r_obs_G, aperture=apert
 pa_v3 = getRomanPositionAngle(removeAberration(B_C_I, v_obs_G, aperture), aperture)
 ```
 
-* **`field_rotation.pa_v3_drift(ra, dec, t_mid, dt, aperture=None, ephemeris="L2", aberration=False)`** does the same
-  for a range of times. Its `sun_ang` is always that of V1, so the FOR checks against `SUN_ANG_MIN`/`SUN_ANG_MAX`
+* **`field_rotation.pa_v3_drift(ra, dec, t_mid, dt, aperture="CGI_CEN", ephemeris="horizons", aberration=False)`**
+  does the same for a range of times, with A and B by default (`aperture` takes a SIAF aperture name, an aperture
+  from `getSIAFAperture()`, or `None` for V1). Its `sun_ang` is always that of V1, so the FOR checks against `SUN_ANG_MIN`/`SUN_ANG_MAX`
   remain correct.
-* **`tools/plan_roll_limits.py`** accepts `--aperture CGI_CEN --ephemeris horizons --aberration`. With these options
-  the reported PA_V3 is the quantity CPGS uses, and the roll-offset arithmetic (a roll of +r changes PA by −r) is
-  exact at the aperture.
+* **`tools/plan_roll_limits.py`** uses `--aperture CGI_CEN --ephemeris horizons` by default; add `--aberration` for C,
+  or use `--aperture none --ephemeris L2` for the boresight model. The reported PA_V3 is then the quantity CPGS uses,
+  and the roll-offset arithmetic (a roll of +r changes PA by −r) is exact at the aperture. In the worked examples of
+  the field-rotation README the defaults change the roll limits by ≤ 0.03° and the reachable PAs by 0.2°–0.6°.
 * **The analytic functions** in `field_rotation.py` (`pa_v3_rate`, `for_window`, `fixed_pa_window`, …) remain
   boresight models. The corrections of section 1 can be applied analytically where needed.
-* **Not changed:** `roman_excam_planner.py`, `roman_observability.py`, `drive_cpgs.py`, `slewing.py`,
-  `tools/field_rotation_rate.py`, `tools/zero_pitch_targets.py`, and the notebooks. They call the revised functions
-  with the default arguments, so their results are identical; they can adopt the options later.
-* **Size:** about 430 added and 60 removed lines in `roman_pointing.py`, `field_rotation.py`, `plan_roll_limits.py` and
-  `pyproject.toml`, many of them docstrings. There are also the 4 kB SIAF extract, `tools/extract_siaf_cgi.py`,
-  `tools/compare_header_pa.py`, and 22 test functions in three files. The field-rotation README
+* **Planning tools: A and B by default.** These have new arguments `aperture="CGI_CEN"` (`None` for V1) and
+  `ephemeris="horizons"` (`"L2"` for the L2 point), with aberration off. They are offline-tested in
+  `tests/test_planning_defaults.py`.
+  * `roman_excam_planner.py` (`calculate_roman_EXCAMangles`, `compute_angles`). The PA_V3 and PA_APER are measured
+    at the aperture, with PA_APER = PA_V3 + V3IdlYAngle + 180°, and the roll is about the aperture. In a test case
+    (47 UMa, June 2027) PA_APER changes by 0.22°–0.55°.
+  * `roman_observability.py` (`compute_roman_angles`, `compute_keepout`), and through it
+    `Reference_Star_Selection_Tool.py`. The Sun angle and pitch are those of V1 with the aperture on the target.
+    Over 2 years at 1-day steps, the observable days of five test targets change by ≤ 3.
+  * `drive_cpgs.py` (`find_crossing_time_diff`), which compares FOR crossing times with CPGS. Aberration, left off,
+    can still move a crossing by up to ~9 min (section 5.1).
+  * `tools/zero_pitch_targets.py` (`--aperture`, `--ephemeris`). The Simbad search circles follow the track of the
+    aperture at zero V1 pitch. The search now also uses the yaw sampling derived from `--bound`, which a hard-coded
+    100-point yaw grid previously overrode.
+* **Not changed:** `slewing.py`, because the options change the yaw and pitch differences between targets by
+  ≤ 0.25°, a negligible fraction of a slew; and `tools/field_rotation_rate.py`, which validates the analytic V1-at-L2
+  model (the aperture term V2Ref/tan ε is not part of it). The notebooks that call `calcRomanAngles` directly are
+  also unchanged.
+* **Size:** about 600 added and 120 removed lines in `roman_pointing.py`, `field_rotation.py`, the four planning
+  tools above, `plan_roll_limits.py` and `pyproject.toml`, many of them docstrings. There are also the 4 kB SIAF extract, `tools/extract_siaf_cgi.py`,
+  `tools/compare_header_pa.py`, and 28 test functions in four files. The field-rotation README
   ([`docs/field_rotation_rate/README.md`](../field_rotation_rate/README.md), sections 2 and 7) documents all three
   corrections.
 * **Dependencies:** none new. `angutils.calcDCM`, `scipy.interpolate.CubicSpline`, `astroquery.jplhorizons` and
@@ -491,8 +517,9 @@ pa_v3 = getRomanPositionAngle(removeAberration(B_C_I, v_obs_G, aperture), apertu
 
 * **SIAF source (A).** When a new SIAF release arrives, regenerate the extract, update `SIAF_FILE`, and remove the
   previous extract. Once pysiaf holds the commissioning SIAF, `getSIAFAperture` can read it and the extract can be
-  removed.
-* **Residual for the LMC visits.** For both LMC visits the residual PA_plan − PA_nom(t₀) (Table 1, A + B + C) is
+  removed. 
+  * During science operations, the most recent SIAF will be synced to the public pysiaf repo. It will then be possible to modify `getSIAFAperture` to import the aperture offset and orientation data directly from pysiaf (https://github.com/spacetelescope/pysiaf).       
+* **Residual PA discrepancies.** For both LMC visits the residual PA_plan − PA_nom(t₀) (Table 1, A + B + C) is
   −0.0035°. For the northern visits the residuals in Tables 1 and 3 are +0.001° to +0.003°.
   * The residual is equivalent to evaluating the nominal attitude about 5 min earlier, so it may come from a
-    visit-dependent definition of the attitude epoch. These data cannot decide.
+    visit-dependent definition of the attitude epoch.

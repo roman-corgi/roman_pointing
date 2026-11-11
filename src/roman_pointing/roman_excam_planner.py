@@ -11,6 +11,8 @@ import traceback
 from roman_pointing.roman_pointing import (
     calcRomanAngles,
     getL2Positions,
+    getRomanPositions,
+    getSIAFAperture,
     getRomanPositionAngle,
     getEXCAMPositionAngle,
     applyRollAngle,
@@ -69,7 +71,7 @@ def get_exoplanet_skycoord(target_name: str) -> SkyCoord:
     return sc.transform_to(BarycentricMeanEcliptic)
 
 
-def calculate_roman_EXCAMangles(target, ts_targ):
+def calculate_roman_EXCAMangles(target, ts_targ, aperture="CGI_CEN", ephemeris="horizons"):
     """Compute Roman Observatory pointing angles and position angles.
 
     Calculates the observatory orientation angles (sun angle, yaw, pitch) and
@@ -82,28 +84,33 @@ def calculate_roman_EXCAMangles(target, ts_targ):
         ts_targ (astropy.time.Time or array-like): Observation time(s) in UTC.
             Can be a single Time object or an array of Time objects for
             multiple epochs.
+        aperture (str or None, optional): SIAF aperture placed on the target, at
+            which the position angles are measured. None for the boresight V1.
+            Default is 'CGI_CEN'.
+        ephemeris (str, optional): Observatory position: 'horizons' (JPL Horizons
+            orbit of Roman) or 'L2' (Sun-Earth L2 point). Default is 'horizons'.
 
     Returns:
         dict: Dictionary containing:
-            - sun_ang (float or ndarray): Solar angle in degrees - angle between
-              target and Sun as seen from the observatory.
+            - sun_ang (float or ndarray): Solar angle of the boresight V1 in
+              degrees, as seen from the observatory.
             - yaw (float or ndarray): Yaw angle in degrees - rotation about the
               Z-axis.
             - pitch (float or ndarray): Pitch angle in degrees - rotation about
               the Y-axis.
             - B_C_I (ndarray): Body-to-inertial rotation matrix (3x3 for single
               time, 3x3xN for multiple times).
-            - PA_Z (float or ndarray): Position angle of Roman's +Z axis in
-              degrees, measured East of North.
+            - PA_Z (float or ndarray): Position angle of Roman's +Z axis (PA_V3)
+              at the aperture, in degrees, measured East of North.
             - PA_EXCAM_Y (float or ndarray): Position angle of EXCAM's +Y axis
               in degrees, measured East of North.
     """
-    sun_ang, yaw, pitch, B_C_I = calcRomanAngles(
-        target, ts_targ, getL2Positions(ts_targ)
-    )
+    aper = getSIAFAperture(aperture) if aperture else None
+    r_obs = getRomanPositions(ts_targ) if ephemeris == "horizons" else getL2Positions(ts_targ)
+    sun_ang, yaw, pitch, B_C_I = calcRomanAngles(target, ts_targ, r_obs, aperture=aper)
 
-    PA_Z = getRomanPositionAngle(B_C_I)
-    PA_EXCAM_Y = getEXCAMPositionAngle(B_C_I)
+    PA_Z = getRomanPositionAngle(B_C_I, aper)
+    PA_EXCAM_Y = getEXCAMPositionAngle(B_C_I, aper)
 
     return {
         "sun_ang": sun_ang.to_value(u.deg),
@@ -142,7 +149,7 @@ def compute_observation_times(start_time, obs_window=30, num_epochs=1):
     return days_from_start, ts_targ
 
 
-def compute_angles(target, ts_targ, roll_angle_deg):
+def compute_angles(target, ts_targ, roll_angle_deg, aperture="CGI_CEN", ephemeris="horizons"):
     """Compute EXCAM position angles with optional spacecraft roll.
 
     Calculates the EXCAM Y-axis position angles both with and without an
@@ -156,6 +163,10 @@ def compute_angles(target, ts_targ, roll_angle_deg):
         roll_angle_deg (float): Spacecraft roll angle in degrees to apply.
             Positive roll rotates the field of view counter-clockwise as viewed
             from the spacecraft.
+        aperture (str or None, optional): SIAF aperture placed on the target and
+            used as the roll axis. None for the boresight V1. Default is 'CGI_CEN'.
+        ephemeris (str, optional): 'horizons' or 'L2', as in
+            calculate_roman_EXCAMangles. Default is 'horizons'.
 
     Returns:
         dict: Dictionary containing:
@@ -175,13 +186,14 @@ def compute_angles(target, ts_targ, roll_angle_deg):
         to match the output conventions of the underlying functions.
 
     """
-    angles = calculate_roman_EXCAMangles(target, ts_targ)
+    angles = calculate_roman_EXCAMangles(target, ts_targ, aperture, ephemeris)
     PA_EXCAM_Y = angles["PA_EXCAM_Y"]
     B_C_I = angles["B_C_I"]
 
+    aper = getSIAFAperture(aperture) if aperture else None
     roll_angles = [roll_angle_deg * u.deg] * len(ts_targ)
-    B_C_I_plusroll = applyRollAngle(B_C_I, roll_angles)
-    PA_EXCAM_Y_plusroll = getEXCAMPositionAngle(B_C_I_plusroll)
+    B_C_I_plusroll = applyRollAngle(B_C_I, roll_angles, aper)
+    PA_EXCAM_Y_plusroll = getEXCAMPositionAngle(B_C_I_plusroll, aper)
 
     return {
         "PA_EXCAM_Y": PA_EXCAM_Y,
