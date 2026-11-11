@@ -80,7 +80,7 @@ def test_pa_v3_drift_ephemeris():
     np.testing.assert_allclose(pa_v3_drift(*args, ephemeris="L2")["s"], pa_v3_drift(*args)["s"], rtol=0, atol=0)
     horizons = pa_v3_drift(*args, ephemeris="horizons")
     default = pa_v3_drift(*args)
-    # differences of a few tenths of a degree at most (memo section 6.2)
+    # differences of a few tenths of a degree at most (docs/attitude_model/README.md, section 4.1)
     assert 0 < abs(horizons["pa_mid"] - default["pa_mid"]) < 1
     assert 0 < np.max(np.abs(horizons["sun_ang"] - default["sun_ang"])) < 1
 
