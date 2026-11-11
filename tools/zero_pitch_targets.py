@@ -18,7 +18,7 @@ from roman_pointing.roman_pointing import (
     getSIAFAperture,
     getSunPositions,
 )
-from astropy.table import Column
+from astropy.table import Column, unique
 from astropy.time import Time
 from astroquery.simbad import Simbad
 import numpy as np
@@ -154,6 +154,8 @@ if __name__ == "__main__":
         radius=radius,
         criteria=f"flux.filter = 'V' AND flux < {float(args.vmag)}",
     )
+    # the search circles overlap, so stars near the overlaps are returned more than once
+    goodres = unique(goodres, keys="main_id")
     nrows = len(goodres)
     goodres.add_column(Column(name='pitch', data=[None]*nrows, unit=u.deg))
     goodres.add_column(Column(name='yaw', data=[None]*nrows, unit=u.deg))
