@@ -1,7 +1,4 @@
 import os
-import re
-import urllib.parse
-import urllib.request
 import warnings
 import xml.etree.ElementTree as ET
 
@@ -17,13 +14,13 @@ from astropy.coordinates import (
     BarycentricMeanEcliptic,
 )
 from astropy.time import Time
+from astroquery.jplhorizons import Horizons
 import scipy.optimize
 from scipy.interpolate import CubicSpline
 
 SIAF_FILE = os.path.join(
     os.path.dirname(__file__), "siaf", "roman_siaf_inflight_20261021_CGI.xml"
 )
-HORIZONS_API = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
 
 # find L2 location
@@ -81,58 +78,69 @@ def getL2Positions(ts):
     return r_L2_G
 
 
-def getHorizonsVectors(command, center, start, stop, step):
-    """Query the JPL Horizons API for a table of geometric ICRF position vectors
+def queryRomanOrbit(ts, step="1d"):
+    """Query JPL Horizons for the barycentric ICRF orbit of Roman around the times ts
 
-    Requests the plain-text table: the CSV table that astroquery requests is
-    returned without vector components by the current Horizons API.
+    Uses astroquery, as in the roman_pointing_demo notebook and the EXOSIMS Roman
+    observatory. The table spans ts in TDB, padded by 2 days for the interpolation.
+    The query is not cached, because the Horizons trajectory of Roman is updated
+    after orbit determination.
 
     Args:
-        command (str):
-            Horizons target body ID (e.g. '-211' for Roman, '10' for the Sun)
-        center (str):
-            Horizons center (e.g. '500@0' for the solar system barycenter)
-        start (str):
-            Start time (TDB)
-        stop (str):
-            Stop time (TDB)
+        ts (astropy.time.Time):
+            Observation time(s) - can be an array of times
         step (str):
-            Table step size (e.g. '1d', '1h')
+            Sampling of the Horizons table (e.g. '1d', '1h')
 
     Returns:
-        tuple:
-            jd (numpy.ndarray(float)): Julian dates (TDB) of the table rows;
-            xyz (numpy.ndarray(float)): 3xn array of positions (AU)
+        astropy.table.Table:
+            Table of orbit vectors from Horizons (Horizons times are TDB)
 
     """
-    params = {
-        "format": "text",
-        "COMMAND": f"'{command}'",
-        "CENTER": f"'{center}'",
-        "EPHEM_TYPE": "VECTORS",
-        "START_TIME": f"'{start}'",
-        "STOP_TIME": f"'{stop}'",
-        "STEP_SIZE": f"'{step}'",
-        "REF_PLANE": "FRAME",
-        "REF_SYSTEM": "ICRF",
-        "VEC_TABLE": "1",
-        "VEC_CORR": "NONE",
-        "OUT_UNITS": "AU-D",
-        "CSV_FORMAT": "NO",
-        "OBJ_DATA": "NO",
-    }
-    url = f"{HORIZONS_API}?{urllib.parse.urlencode(params)}"
-    with urllib.request.urlopen(url, timeout=60) as response:
-        text = response.read().decode()
-    if "$$SOE" not in text:
-        raise ValueError(f"No Horizons ephemeris returned:\n{text[-1000:]}")
-    table = text.split("$$SOE")[1].split("$$EOE")[0]
-    jd = np.array(re.findall(r"^\s*(\d+\.\d+) = A\.D\.", table, flags=re.M), dtype=float)
-    xyz = np.array(
-        re.findall(r"X =\s*(\S+)\s+Y =\s*(\S+)\s+Z =\s*(\S+)", table), dtype=float
-    ).T
+    jd = np.atleast_1d(ts.tdb.jd)
+    start = Time(np.floor(jd.min() - 0.5) - 1.5, format="jd", scale="tdb").iso
+    stop = Time(np.ceil(jd.max() - 0.5) + 2.5, format="jd", scale="tdb").iso
+    obj = Horizons(
+        id="-211",
+        location="@0",
+        epochs={"start": start, "stop": stop, "step": step},
+    )
 
-    return jd, xyz
+    return obj.vectors(refplane="earth", cache=False)
+
+
+def genRomanOrbitInterpolant(vectors_table):
+    """Generate a cubic-spline interpolant of the Roman orbit from a Horizons table
+
+    Follows genRomanOrbitInterpolant of the EXOSIMS Roman observatory, with the
+    table times labeled as TDB, the time scale of Horizons vector tables.
+
+    Args:
+        vectors_table (astropy.table.Table):
+            Table of orbit data queried from Horizons
+
+    Returns:
+        scipy.interpolate.CubicSpline:
+            Cubic spline interpolant over orbit data, a function of MJD (TDB),
+            returning nx3 positions (AU)
+
+    """
+    # get time array and convert to MJD
+    ts = Time(vectors_table["datetime_jd"].data, format="jd", scale="tdb")
+
+    # get position data
+    pos = np.vstack([np.asarray(vectors_table[l]) for l in ["x", "y", "z"]]).T
+
+    # ensure that this is in AU
+    assert (
+        vectors_table["x"].info.unit
+        == vectors_table["y"].info.unit
+        == vectors_table["z"].info.unit
+    ), "Orbit table columns have different units."
+    if vectors_table["x"].info.unit != u.AU:
+        pos = (pos * vectors_table["x"].info.unit).to_value(u.AU)
+
+    return CubicSpline(ts.mjd, pos)
 
 
 def getRomanPositions(ts, step="1d"):
@@ -152,16 +160,13 @@ def getRomanPositions(ts, step="1d"):
             3xn array of Roman barycentric positions where n is the size of ts
 
     """
-    jd = np.atleast_1d(ts.tdb.jd)
-    start = Time(np.floor(jd.min() - 0.5) - 1.5, format="jd", scale="tdb").iso
-    stop = Time(np.ceil(jd.max() - 0.5) + 2.5, format="jd", scale="tdb").iso
     try:
-        jd_table, xyz_table = getHorizonsVectors("-211", "500@0", start, stop, step)
+        interpolant = genRomanOrbitInterpolant(queryRomanOrbit(ts, step))
     except Exception as err:
         warnings.warn(f"Horizons query failed ({err}); using the L2 approximation")
         return getL2Positions(ts)
-    xyz = CubicSpline(jd_table, xyz_table, axis=1)(jd)
-    roman = SkyCoord(CartesianRepresentation(xyz * u.AU), frame="icrs").transform_to(
+    xyz = interpolant(np.atleast_1d(ts.tdb.mjd)).T * u.AU
+    roman = SkyCoord(CartesianRepresentation(xyz), frame="icrs").transform_to(
         BarycentricMeanEcliptic
     )
 
@@ -203,17 +208,14 @@ def getRomanVelocities(ts, step="1d"):
             3xn array of Roman barycentric velocities (km/s) where n is the size of ts
 
     """
-    jd = np.atleast_1d(ts.tdb.jd)
-    start = Time(np.floor(jd.min() - 0.5) - 1.5, format="jd", scale="tdb").iso
-    stop = Time(np.ceil(jd.max() - 0.5) + 2.5, format="jd", scale="tdb").iso
     try:
-        jd_table, xyz_table = getHorizonsVectors("-211", "500@0", start, stop, step)
+        interpolant = genRomanOrbitInterpolant(queryRomanOrbit(ts, step))
     except Exception as err:
         warnings.warn(f"Horizons query failed ({err}); using the L2 approximation")
         return getL2Velocities(ts)
-    spline = CubicSpline(jd_table, xyz_table, axis=1)
-    xyz = CartesianRepresentation(spline(jd) * u.AU)
-    vxyz = CartesianDifferential(spline(jd, 1) * u.AU / u.day)
+    mjd = np.atleast_1d(ts.tdb.mjd)
+    xyz = CartesianRepresentation(interpolant(mjd).T * u.AU)
+    vxyz = CartesianDifferential(interpolant(mjd, 1).T * u.AU / u.day)
     roman = SkyCoord(xyz.with_differentials(vxyz), frame="icrs").transform_to(
         BarycentricMeanEcliptic
     )

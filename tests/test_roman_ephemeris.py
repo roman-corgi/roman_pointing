@@ -5,15 +5,17 @@ import numpy as np
 import pytest
 from astropy.coordinates import BarycentricMeanEcliptic, CartesianRepresentation, SkyCoord
 from astropy.time import Time
+from astroquery.jplhorizons import Horizons
 
 from roman_pointing.field_rotation import pa_v3_drift
 from roman_pointing.roman_pointing import (
-    getHorizonsVectors,
+    genRomanOrbitInterpolant,
     getL2Positions,
     getRomanPositions,
     getRomanVelocities,
     getSIAFAperture,
     getSunPositions,
+    queryRomanOrbit,
 )
 
 T0 = Time("2026-10-26T00:00:00", scale="tdb")
@@ -22,23 +24,24 @@ T0 = Time("2026-10-26T00:00:00", scale="tdb")
 @pytest.fixture(scope="module", autouse=True)
 def horizons():
     try:
-        getHorizonsVectors("-211", "500@0", "2026-10-26", "2026-10-27", "1d")
+        queryRomanOrbit(T0)
     except Exception as err:
         pytest.skip(f"JPL Horizons not reachable: {err}")
 
 
-def to_ecliptic(xyz):
-    """Convert ICRF Cartesian positions (AU) to BarycentricMeanEcliptic.
+def to_ecliptic(vectors_table):
+    """Convert the ICRF positions of a Horizons vectors table to BarycentricMeanEcliptic.
 
     Args:
-        xyz (numpy.ndarray):
-            3xn positions (AU)
+        vectors_table (astropy.table.Table):
+            Horizons vectors table (refplane="earth", AU)
 
     Returns:
         astropy.units.Quantity:
             3xn positions (AU)
     """
-    return SkyCoord(CartesianRepresentation(xyz * u.AU), frame="icrs").transform_to(
+    xyz = np.vstack([np.asarray(vectors_table[c]) for c in "xyz"]) * u.AU
+    return SkyCoord(CartesianRepresentation(xyz), frame="icrs").transform_to(
         BarycentricMeanEcliptic).cartesian.xyz
 
 
@@ -51,16 +54,30 @@ def test_distance_from_l2():
 
 def test_interpolation():
     ts = T0 + np.arange(0, 48) * u.hour
-    jd, xyz = getHorizonsVectors("-211", "500@0", "2026-10-26 00:00", "2026-10-27 23:00", "1h")
-    np.testing.assert_allclose(jd, ts.jd)
-    dist = np.linalg.norm(getRomanPositions(ts) - to_ecliptic(xyz), axis=0).to_value(u.km)
+    hourly = Horizons(id="-211", location="@0", epochs={"start": "2026-10-26 00:00", "stop": "2026-10-27 23:00",
+                                                        "step": "1h"}).vectors(refplane="earth", cache=False)
+    np.testing.assert_allclose(hourly["datetime_jd"].data, ts.jd)
+    dist = np.linalg.norm(getRomanPositions(ts) - to_ecliptic(hourly), axis=0).to_value(u.km)
     assert dist.max() < 1
+
+
+def test_orbit_interpolant():
+    table = queryRomanOrbit(T0 + np.arange(0, 3) * u.day)
+    spline = genRomanOrbitInterpolant(table)
+    nodes = np.vstack([np.asarray(table[c]) for c in "xyz"]).T
+    np.testing.assert_allclose(spline(Time(table["datetime_jd"].data, format="jd", scale="tdb").mjd), nodes, rtol=0, atol=1e-15)
+    # a table in km gives the same interpolant in AU
+    table_km = table.copy()
+    for c in "xyz":
+        table_km[c] = (table[c].data * u.AU).to(u.km)
+    np.testing.assert_allclose(genRomanOrbitInterpolant(table_km)(T0.tdb.mjd), spline(T0.tdb.mjd), rtol=1e-12)
 
 
 def test_sun_direction():
     ts = T0 + np.arange(0, 48, 6) * u.hour
-    _, xyz = getHorizonsVectors("10", "500@-211", "2026-10-26 00:00", "2026-10-27 18:00", "6h")
-    sun_horizons = to_ecliptic(xyz).value
+    sun = Horizons(id="10", location="500@-211", epochs={"start": "2026-10-26 00:00", "stop": "2026-10-27 18:00",
+                                                         "step": "6h"}).vectors(refplane="earth", cache=False)
+    sun_horizons = to_ecliptic(sun).value
     sun_model = (getSunPositions(ts) - getRomanPositions(ts)).value
     cos_ang = np.sum(sun_horizons * sun_model, axis=0) / np.linalg.norm(sun_horizons, axis=0) / np.linalg.norm(
         sun_model, axis=0)

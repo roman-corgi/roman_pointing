@@ -37,7 +37,7 @@ the attitude telemetry and the CGI header pointing of five commissioning visits 
 
 All three change the PA_V3 rate by ≲ 2%, so the analytic rate model in `field_rotation.py` remains valid as it is.
 
-Verification against the STScI observation plans (section 6.3, Table 1). The residual is the planned PA_V3 (OPUP "CGI
+Verification against the Roman SOC observation plans (section 6.3, Table 1). The residual is the planned PA_V3 (OPUP "CGI
 Fixed v3pa@T") minus the model's nominal PA_V3 at the planned attitude epoch; the table gives its largest absolute
 value over the three visits with plans.
 
@@ -176,17 +176,25 @@ ecliptic vector with a fixed obliquity.
 
 ### 4.2 Implementation
 
-* **`getHorizonsVectors(command, center, start, stop, step)`** sends one request to the Horizons API and parses the
-  plain-text table of geometric ICRF positions (`VEC_TABLE=1`, `CSV_FORMAT=NO`).
-  * astroquery's `Horizons(...).vectors()` is not used. As of 2026-11-09, the API returns the CSV tables that
-    astroquery requests with dates but no vector components, for every body. A failed query would then fall back
-    silently to L2.
-* **`getRomanPositions(ts, step="1d")`** returns barycentric BarycentricMeanEcliptic positions (AU), the same form as
-  `getL2Positions`, so it can be passed as `r_obs_G`.
-  * It makes one query per call (about 1 s) for the whole span of `ts`, in TDB, padded by 2 days.
-  * It interpolates with a cubic spline, which is within 0.5 km of hourly Horizons values.
-  * It converts to ecliptic coordinates with astropy, as `getSunPositions` does.
-* **`getRomanVelocities(ts, step="1d")`** returns the spline derivative (km/s) and is used by change C.
+The implementation follows the astroquery recipe of the `roman_pointing_demo` notebook ("Using a real Roman Orbit")
+and the structure of the EXOSIMS Roman observatory (`EXOSIMS/Observatory/Roman.py`): a Horizons query, a cubic-spline
+interpolant of the table, and its evaluation at the requested times.
+
+* **`queryRomanOrbit(ts, step="1d")`** queries Horizons with astroquery,
+  `Horizons(id="-211", location="@0", ...).vectors(refplane="earth")`, for one table spanning `ts`, padded by
+  2 days. It takes about 1 s per call.
+  * The times are TDB, the time scale of Horizons vector tables. Passing UTC strings, as the notebook does, shifts the
+    positions by 69 s, about 2,100 km: 0.8″ in Sun angle and 2.8″ in PA_V3 for 11 UMi.
+  * The query is not cached, because the Horizons trajectory of Roman is updated after orbit determination.
+* **`genRomanOrbitInterpolant(vectors_table)`** is the EXOSIMS function of that name: a `CubicSpline` over MJD, with
+  the unit check. The table times are labeled TDB.
+  * The spline is within 0.5 km of hourly Horizons values, and allows any `ts`, not only the daily table grid of the
+    notebook.
+* **`getRomanPositions(ts, step="1d")`** evaluates the interpolant and returns barycentric BarycentricMeanEcliptic
+  positions (AU), the same form as `getL2Positions`, so the result can be passed as `r_obs_G`.
+  * The query is for ICRF vectors, which are converted to ecliptic coordinates with astropy, as `getSunPositions`
+    does. EXOSIMS and the notebook use Horizons' own ecliptic or equatorial planes instead; the difference is < 10 km.
+* **`getRomanVelocities(ts, step="1d")`** returns the derivative of the same interpolant (km/s) and is used by change C.
 * **Fallback.** Without a network, or outside the Horizons coverage, both functions warn and return the L2
   approximation.
 * **Not yet done.** A reader for the FDF OEM predicts used by the SOC would be an offline alternative. Each OEM file
@@ -195,6 +203,7 @@ ecliptic vector with a fixed obliquity.
 ### 4.3 Tests (`tests/test_roman_ephemeris.py`; network, skipped when offline)
 
 * `getRomanPositions` lies 2–9 × 10⁵ km from `getL2Positions` within the coverage.
+* `genRomanOrbitInterpolant` reproduces the table at its nodes, and gives the same result for a table in km.
 * The daily spline agrees with hourly Horizons values to < 1 km.
 * The Sun direction from Roman agrees with Horizons' Sun vector as seen from Roman to < 1″ (0.03″ achieved).
 * `getRomanVelocities` agrees with finite differences of `getRomanPositions` to 10⁻³ km/s.
@@ -475,8 +484,8 @@ pa_v3 = getRomanPositionAngle(removeAberration(B_C_I, v_obs_G, aperture), apertu
   `tools/compare_header_pa.py`, and 22 test functions in three files. The field-rotation README
   ([`docs/field_rotation_rate/README.md`](../field_rotation_rate/README.md), sections 2 and 7) documents all three
   corrections.
-* **Dependencies:** none new. `angutils.calcDCM`, `scipy.interpolate.CubicSpline` and the standard-library
-  `xml.etree`, `urllib` and `re` are used. `asdf` is needed only for `compare_header_pa.py --wfi`.
+* **Dependencies:** none new. `angutils.calcDCM`, `scipy.interpolate.CubicSpline`, `astroquery.jplhorizons` and
+  the standard-library `xml.etree` are used. `asdf` is needed only for `compare_header_pa.py --wfi`.
 
 ## 8. Open items
 
