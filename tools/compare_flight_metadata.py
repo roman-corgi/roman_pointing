@@ -7,15 +7,16 @@ Compare CGI header pointing (and, optionally, WFI telemetry) with roman_pointing
   4. aperture on the target, Horizons trajectory
   5. as 4, with the velocity aberration of the target and Sun directions (physical attitude)
 
-Conventions established with CAR-55.1, 55.4, 193.1 and 193.2 data (see docs/attitude_model/README.md, section 6):
+Conventions established with commissioning data (see docs/attitude_model/README.md, section 6):
   * The observation plan fixes PA_V3 for the planned attitude epoch (the visit-slew start in the OPUP, or the Jira
     "Planned Execution Time"), and the attitude is held inertially fixed when the visit executes at another time.
     Give that epoch per visit with --epoch; otherwise the frame time is used.
   * CGI L1 pointing keywords (RA_BORE, DEC_BORE, RA_APER, DEC_APER, PA_V3, PA_APER) are the raw ACS attitude
     quaternion, i.e. in the apparent frame. They are compared with model 5 in the apparent frame; models 1-4 have
     no aberration.
-  * WFI meta.pointing (CALCULATED) is aberration-corrected (catalog frame, as the plans). With --wfi, the WFI
-    exposure covering each CGI frame gives the measured attitude, compared with model 5 in the catalog frame.
+  * WFI meta.pointing (CALCULATED) is aberration-corrected (barycentric coordinate frame, as the plans). With --wfi,
+    the WFI exposure covering each CGI frame gives the measured attitude, compared with model 5 in the barycentric
+    coordinate frame.
   * With --plan (the OPUP "CGI Fixed v3pa@T" of a visit) and --wfi, the held attitude is predicted at the WFI
     mid-exposure time: the model-5 nominal attitude rolled about the CGI aperture until its PA_V3 there equals the
     planned value. Its PA_V3 at V1 is compared with the WFI-reported meta.pointing.pa_v3, which refers to V1.
@@ -25,21 +26,23 @@ Conventions established with CAR-55.1, 55.4, 193.1 and 193.2 data (see docs/atti
     e.g. WFI_CEN); the check does the same if --siaf gives a SIAF file with that aperture, else it uses CGI_CEN.
     It also lists the rotation of the WFI Gaia alignment (meta.wcs_fit_results).
   * With --wfi, a third table covers WFI-prime exposures (meta.observation.wfi_parallel False), whose attitude places
-    the WFI target aperture (from --siaf) on the WFI target. Their PA_V3 at that aperture (telemetry, catalog frame)
-    is compared with model 5 at the planned epoch of the WFI visit (--epoch WFIVISITID=TIME), for the visit target
-    (the target of its first exposure), and with the planned PA_V3 (--plan WFIVISITID=PA, OPUP "WFI Fixed v3pa@T").
+    the WFI target aperture (from --siaf) on the WFI target. Their PA_V3 at that aperture (telemetry, barycentric
+    coordinate frame) is compared with model 5 at the planned epoch of the WFI visit (--epoch WFIVISITID=TIME), for the
+    visit target (the target of its first exposure), and with the planned PA_V3 (--plan WFIVISITID=PA, OPUP "WFI
+    Fixed v3pa@T").
   * Headers from CDMS releases before 520 (no SIAF keyword) used the preflight SIAF; their aperture and PA keywords
     are not compared.
 
-Usage:
-  python tools/compare_header_pa.py ~/CGI_Commissioning_Data/MAST/CAR-193.1/CGI_L1 \\
-      --epoch 0116001001001001001=2026-11-01T04:57:00 --plan 0116001001001001001=193.115 \\
-      --wfi ~/CGI_Commissioning_Data/MAST/CAR-193.1/WFI/*_wcs.asdf
-  # WFI-prime visits with CGI parallels (CAR-193.2); --siaf is a full SIAF release with WFI_CEN
-  python tools/compare_header_pa.py ~/CGI_Commissioning_Data/MAST/CAR-193.2/CGI_L1 \\
-      --epoch 0116001002002001001=2026-11-11T23:28:23 --epoch 0104902002001001001=2026-11-11T23:28:23 \\
-      --plan 0104902002001001001=108.507 --wfi ~/CGI_Commissioning_Data/MAST/CAR-193.2/WFI/*_wcs.asdf \\
-      --siaf roman_siaf_inflight_20261021.xml
+Usage (<data_dir>/<car>/ holds CGI_L1/ with the CGI L1 FITS files and WFI/ with the WFI _wcs.asdf files of one
+activity; <utc_time> is YYYY-MM-DDThh:mm:ss):
+  python tools/compare_flight_metadata.py <data_dir>/<car>/CGI_L1 \\
+      --epoch <cgi_visit_id>=<utc_time> --plan <cgi_visit_id>=<pa_plan_deg> \\
+      --wfi <data_dir>/<car>/WFI/*_wcs.asdf
+  # WFI-prime visits with CGI parallels; --siaf is a full SIAF release with WFI_CEN
+  python tools/compare_flight_metadata.py <data_dir>/<car>/CGI_L1 \\
+      --epoch <cgi_visit_id>=<utc_time> --epoch <wfi_visit_id>=<utc_time> \\
+      --plan <wfi_visit_id>=<pa_plan_deg> --wfi <data_dir>/<car>/WFI/*_wcs.asdf \\
+      --siaf <full_siaf_release>.xml
 
 """
 
@@ -111,8 +114,9 @@ def read_wfi_pointing(files):
 
     Returns:
         list:
-            dicts with start and end (astropy.time.Time), B_C_I (3x3, catalog frame, BarycentricMeanEcliptic),
-            pa_v3 (deg, the reported PA_V3 at V1), B_q (3x3, the raw quaternion attitude, apparent frame,
+            dicts with start and end (astropy.time.Time), B_C_I (3x3, barycentric coordinate frame,
+            BarycentricMeanEcliptic), pa_v3 (deg, the reported PA_V3 at V1), B_q (3x3, the raw quaternion attitude,
+            apparent frame,
             BarycentricMeanEcliptic), the Gaia alignment rotation fit_rot (deg) and nmatches (None if absent), and
             visit_id, exposure, wfi_parallel, target_ra, target_dec (deg) and target_aperture
     """
@@ -152,7 +156,7 @@ def read_wfi_pointing(files):
 
 
 def model5_pa(target, ts, aperture):
-    """Apparent- and catalog-frame PA_V3 at the aperture for the physical nominal attitude (model 5).
+    """PA_V3 at the aperture (apparent and barycentric coordinate frames) of the physical nominal attitude (model 5).
 
     Args:
         target (astropy.coordinates.SkyCoord):
@@ -176,8 +180,8 @@ def model5_pa(target, ts, aperture):
 def held_pa_v3_at_v1(target, ts, aperture, pa_plan):
     """Predict PA_V3 at V1 of the held attitude: CGI aperture on the target, planned PA_V3 at the aperture.
 
-    The model-5 nominal attitude (catalog frame) is rolled about the aperture by its roll from nominal,
-    R = PA_nom - pa_plan, so that the PA_V3 at the aperture equals pa_plan.
+    The model-5 nominal attitude (barycentric coordinate frame) is rolled about the aperture by its roll from
+    nominal, R = PA_nom - pa_plan, so that the PA_V3 at the aperture equals pa_plan.
 
     Args:
         target (astropy.coordinates.SkyCoord):
@@ -187,7 +191,7 @@ def held_pa_v3_at_v1(target, ts, aperture, pa_plan):
         aperture (dict):
             Aperture from getSIAFAperture()
         pa_plan (float):
-            Planned PA_V3 at the aperture (deg, catalog frame)
+            Planned PA_V3 at the aperture (deg, barycentric coordinate frame)
 
     Returns:
         tuple:
@@ -202,7 +206,7 @@ def held_pa_v3_at_v1(target, ts, aperture, pa_plan):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(prog="compare_header_pa.py",
+    ap = argparse.ArgumentParser(prog="compare_flight_metadata.py",
                                  description="Compare CGI header pointing and WFI telemetry with roman_pointing models")
     ap.add_argument("datadir", help="Directory of CGI L1 FITS files (L2b files carry the same pointing keywords)")
     ap.add_argument("--epoch", action="append", default=[], metavar="VISITID=TIME",
