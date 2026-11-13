@@ -9,14 +9,17 @@ from astroquery.jplhorizons import Horizons
 
 from roman_pointing.field_rotation import pa_v3_drift
 from roman_pointing.roman_pointing import (
+    calcRomanAngles,
     genRomanOrbitInterpolant,
     getL2Positions,
+    getRomanPositionAngle,
     getRomanPositions,
     getRomanVelocities,
     getSIAFAperture,
     getSunPositions,
     queryRomanOrbit,
     queryRomanOrbitSpan,
+    removeAberration,
 )
 
 T0 = Time("2026-10-26T00:00:00", scale="tdb")
@@ -148,3 +151,29 @@ def test_opup_planned_pa(name, radec, t_plan, v3pa_t):
     aperture = getSIAFAperture()
     d = pa_v3_drift(*radec, Time(t_plan, scale="utc"), np.array([-0.01, 0, 0.01]), aperture, "horizons", aberration=True)
     assert abs((v3pa_t - d["pa_mid"] + 180) % 360 - 180) < 0.005
+
+
+# WFI_CEN from the in-flight SIAF roman_siaf_inflight_20261021.xml
+WFI_CEN = {"V2Ref": 1686.548, "V3Ref": -1014.664}
+WFI_CEN["u_B"] = np.array([np.cos(np.radians(WFI_CEN["V2Ref"] / 3600)) * np.cos(np.radians(WFI_CEN["V3Ref"] / 3600)),
+                           np.sin(np.radians(WFI_CEN["V2Ref"] / 3600)) * np.cos(np.radians(WFI_CEN["V3Ref"] / 3600)),
+                           np.sin(np.radians(WFI_CEN["V3Ref"] / 3600))])
+
+
+@pytest.mark.parametrize("visit, radec, t_plan, v3pa_v1", [
+    ("0104902002001001001", (150.052926827131, 2.140456281571937), "2026-11-11T23:28:23", 108.517),
+    ("0104902002001001002", (150.3673315602825, 2.419281530640215), "2026-11-12T00:08:37", 108.618),
+    ("0104902002001002001", (150.3673337671353, 2.41927852076802), "2026-11-12T00:19:00", 108.619),
+    ("0104902002001002002", (150.0529110546699, 2.140473040464606), "2026-11-12T00:25:09", 108.524),
+])
+def test_opup_wfi_prime_pa(visit, radec, t_plan, v3pa_v1):
+    # CAR-193.2 WFI-prime visits: OPUP V3PA (at V1) at visit begin, reproduced by the full model with WFI_CEN on the
+    # target at the visit-slew start. (The OPUP "WFI Fixed v3pa@T" differs from the flown attitude by about 0.005 deg.)
+    target = SkyCoord(ra=radec[0] * u.deg, dec=radec[1] * u.deg, distance=1e6 * u.pc, pm_ra_cosdec=0 * u.mas / u.yr,
+                      pm_dec=0 * u.mas / u.yr, radial_velocity=0 * u.km / u.s, frame="icrs",
+                      obstime=Time("J2000")).transform_to(BarycentricMeanEcliptic)
+    ts = Time([t_plan], scale="utc")
+    v_obs = getRomanVelocities(ts)
+    B_C_I = calcRomanAngles(target, ts, getRomanPositions(ts), getSunPositions(ts), WFI_CEN, v_obs)[3]
+    pa_v1 = getRomanPositionAngle(removeAberration(B_C_I, v_obs, WFI_CEN)).to_value(u.deg)[0]
+    assert abs((v3pa_v1 - pa_v1 + 180) % 360 - 180) < 0.005

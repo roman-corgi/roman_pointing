@@ -129,8 +129,9 @@ def test_default_matches_main(radec):
 def test_siaf_extract(aperture):
     assert SIAF_FILE.endswith("_CGI.xml")
     assert aperture["V2Ref"] == -1104.214 and aperture["V3Ref"] == -840.945
-    # current ideal-frame convention (releases from 20260928): V3IdlYAngle near -30 deg, not 240 deg
-    assert abs(aperture["V3IdlYAngle"] + 30) < 1
+    # V3IdlYAngle near -30 deg (SIAF releases from 20260928); older releases give ~240 deg, which would make
+    # PA_APER = PA_V3 + V3IdlYAngle + 180 deg wrong by 90 deg. The wide tolerance allows later calibration updates.
+    assert abs(aperture["V3IdlYAngle"] + 30) < 10
     assert aperture["VIdlParity"] == -1
     assert np.isclose(np.linalg.norm(aperture["u_B"]), 1, rtol=0, atol=1e-15)
     with pytest.raises(ValueError):

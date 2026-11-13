@@ -7,7 +7,7 @@ Compare CGI header pointing (and, optionally, WFI telemetry) with roman_pointing
   4. aperture on the target, Horizons trajectory
   5. as 4, with the velocity aberration of the target and Sun directions (physical attitude)
 
-Conventions established with CAR-55.1, 55.4 and 193.1 data (see docs/attitude_model/README.md, section 6):
+Conventions established with CAR-55.1, 55.4, 193.1 and 193.2 data (see docs/attitude_model/README.md, section 6):
   * The observation plan fixes PA_V3 for the planned attitude epoch (the visit-slew start in the OPUP, or the Jira
     "Planned Execution Time"), and the attitude is held inertially fixed when the visit executes at another time.
     Give that epoch per visit with --epoch; otherwise the frame time is used.
@@ -21,14 +21,25 @@ Conventions established with CAR-55.1, 55.4 and 193.1 data (see docs/attitude_mo
     planned value. Its PA_V3 at V1 is compared with the WFI-reported meta.pointing.pa_v3, which refers to V1.
   * With --wfi, a second table compares the raw ACS attitude quaternion in the WFI meta.pointing (SCF_AC_SDR_QBJ,
     apparent frame) with the CGI header pointing, and, with the aberration removed, with the WFI meta.pointing
-    values. It also lists the rotation of the WFI Gaia alignment (meta.wcs_fit_results).
+    values. The WFI pipeline removes the aberration at the exposure's target aperture (meta.pointing.target_aperture,
+    e.g. WFI_CEN); the check does the same if --siaf gives a SIAF file with that aperture, else it uses CGI_CEN.
+    It also lists the rotation of the WFI Gaia alignment (meta.wcs_fit_results).
+  * With --wfi, a third table covers WFI-prime exposures (meta.observation.wfi_parallel False), whose attitude places
+    the WFI target aperture (from --siaf) on the WFI target. Their PA_V3 at that aperture (telemetry, catalog frame)
+    is compared with model 5 at the planned epoch of the WFI visit (--epoch WFIVISITID=TIME), for the visit target
+    (the target of its first exposure), and with the planned PA_V3 (--plan WFIVISITID=PA, OPUP "WFI Fixed v3pa@T").
   * Headers from CDMS releases before 520 (no SIAF keyword) used the preflight SIAF; their aperture and PA keywords
     are not compared.
 
 Usage:
-  python tools/compare_header_pa.py ~/CGI_Commissioning_Data/CAR193.1_L1_MAST \\
+  python tools/compare_header_pa.py ~/CGI_Commissioning_Data/MAST/CAR-193.1/CGI_L1 \\
       --epoch 0116001001001001001=2026-11-01T04:57:00 --plan 0116001001001001001=193.115 \\
-      --wfi ~/CGI_Commissioning_Data/CAR193.1_WFI_MAST/*_wcs.asdf
+      --wfi ~/CGI_Commissioning_Data/MAST/CAR-193.1/WFI/*_wcs.asdf
+  # WFI-prime visits with CGI parallels (CAR-193.2); --siaf is a full SIAF release with WFI_CEN
+  python tools/compare_header_pa.py ~/CGI_Commissioning_Data/MAST/CAR-193.2/CGI_L1 \\
+      --epoch 0116001002002001001=2026-11-11T23:28:23 --epoch 0104902002001001001=2026-11-11T23:28:23 \\
+      --plan 0104902002001001001=108.507 --wfi ~/CGI_Commissioning_Data/MAST/CAR-193.2/WFI/*_wcs.asdf \\
+      --siaf roman_siaf_inflight_20261021.xml
 
 """
 
@@ -102,7 +113,8 @@ def read_wfi_pointing(files):
         list:
             dicts with start and end (astropy.time.Time), B_C_I (3x3, catalog frame, BarycentricMeanEcliptic),
             pa_v3 (deg, the reported PA_V3 at V1), B_q (3x3, the raw quaternion attitude, apparent frame,
-            BarycentricMeanEcliptic), and the Gaia alignment rotation fit_rot (deg) and nmatches (None if absent)
+            BarycentricMeanEcliptic), the Gaia alignment rotation fit_rot (deg) and nmatches (None if absent), and
+            visit_id, exposure, wfi_parallel, target_ra, target_dec (deg) and target_aperture
     """
     import asdf  # optional dependency, only needed with --wfi
 
@@ -111,7 +123,7 @@ def read_wfi_pointing(files):
         with warnings.catch_warnings(), asdf.open(f, lazy_load=True) as af:
             warnings.simplefilter("ignore")
             meta = af.tree["roman"]["meta"]
-            p, exposure = dict(meta["pointing"]), dict(meta["exposure"])
+            p, exposure, obs = dict(meta["pointing"]), dict(meta["exposure"]), dict(meta["observation"])
             fit = dict(meta["wcs_fit_results"]) if "wcs_fit_results" in meta else {}
         b_1 = ecliptic_vector(p["ra_v1"], p["dec_v1"])
         north = ecliptic_vector(0, 90)
@@ -132,7 +144,10 @@ def read_wfi_pointing(files):
         B_q = SkyCoord(CartesianRepresentation(A.T), frame="icrs").transform_to(BarycentricMeanEcliptic).cartesian.xyz.value.T
         out.append({"file": os.path.basename(f), "start": Time(exposure["start_time"]), "end": Time(exposure["end_time"]),
                     "B_C_I": B_C_I, "pa_v3": p["pa_v3"], "source": p["pointing_engineering_source"], "B_q": B_q,
-                    "fit_rot": fit.get("proper_rot"), "nmatches": fit.get("nmatches")})
+                    "fit_rot": fit.get("proper_rot"), "nmatches": fit.get("nmatches"), "visit_id": str(obs["visit_id"]),
+                    "exposure": int(obs["exposure"]), "wfi_parallel": bool(obs.get("wfi_parallel", True)),
+                    "target_ra": p.get("target_ra"), "target_dec": p.get("target_dec"),
+                    "target_aperture": p.get("target_aperture")})
     return out
 
 
@@ -189,18 +204,28 @@ def held_pa_v3_at_v1(target, ts, aperture, pa_plan):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(prog="compare_header_pa.py",
                                  description="Compare CGI header pointing and WFI telemetry with roman_pointing models")
-    ap.add_argument("datadir", help="Directory of CGI L1/L2b FITS files")
+    ap.add_argument("datadir", help="Directory of CGI L1 FITS files (L2b files carry the same pointing keywords)")
     ap.add_argument("--epoch", action="append", default=[], metavar="VISITID=TIME",
                     help="Planned attitude epoch (UTC, ISO) for a visit; repeat for several visits")
     ap.add_argument("--wfi", nargs="+", default=[], help="WFI ASDF files (e.g. *_wcs.asdf) of simultaneous exposures")
     ap.add_argument("--plan", action="append", default=[], metavar="VISITID=PA",
-                    help="Planned PA_V3 at the target (OPUP 'CGI Fixed v3pa@T', deg) for a visit; repeat for several")
+                    help="Planned PA_V3 at the target (OPUP 'CGI Fixed v3pa@T', or 'WFI Fixed v3pa@T' for a WFI "
+                         "visit, deg) for a visit; repeat for several")
+    ap.add_argument("--siaf", help="SIAF XML file with the WFI target apertures (e.g. WFI_CEN) of the --wfi exposures; "
+                                   "CGI_CEN always comes from the packaged extract")
     args = ap.parse_args()
 
     aperture = getSIAFAperture()
     epochs = dict(e.split("=", 1) for e in args.epoch)
     plans = {k: float(v) for k, v in (e.split("=", 1) for e in args.plan)}
     wfi = read_wfi_pointing(args.wfi) if args.wfi else []
+    # WFI target apertures, for the aberration reference and the WFI-prime table (None if not in --siaf)
+    wfi_apertures = {}
+    for name in {w["target_aperture"] for w in wfi}:
+        try:
+            wfi_apertures[name] = getSIAFAperture(name, args.siaf) if args.siaf else None
+        except ValueError:
+            wfi_apertures[name] = None
     files = sorted(glob.glob(os.path.join(os.path.expanduser(args.datadir), "*.fits")))
 
     resid = {m: [] for m in LABELS}
@@ -261,7 +286,8 @@ if __name__ == "__main__":
 
             # quaternion check: header vs raw quaternion (apparent); WFI meta.pointing vs quaternion, aberration removed
             B_q = w["B_q"]
-            B_q_cat = removeAberration(B_q[:, :, None], getRomanVelocities(t_mid), aperture)[:, :, 0]
+            va_ref = wfi_apertures.get(w["target_aperture"]) or aperture  # as the WFI pipeline, if known
+            B_q_cat = removeAberration(B_q[:, :, None], getRomanVelocities(t_mid), va_ref)[:, :, 0]
             pa_q = getRomanPositionAngle(B_q[:, :, None], aperture).to_value(u.deg)[0]
             pa_q_cat = getRomanPositionAngle(B_q_cat[:, :, None], aperture).to_value(u.deg)[0]
             bore = np.degrees(np.linalg.norm(ecliptic_vector(h0["RA_BORE"], h0["DEC_BORE"]) - B_q[0])) * 3600
@@ -287,9 +313,43 @@ if __name__ == "__main__":
             print(row)
         print("Quaternion check: positions in arcsec, angles in deg. 'CGI header - quaternion' compares RA/DEC_BORE with "
               "V1, RA/DEC_APER with CGI_CEN, and PA_V3 at CGI_CEN (apparent frame). 'WFI - quat. (VA rem.)' compares the "
-              "WFI ra_v1/dec_v1 and pa_v3 (at V1) with the quaternion after removeAberration. 'quat. - VA rem.' is the "
-              "size of the aberration at V1 and in PA_V3 at CGI_CEN. Gaia fit: meta.wcs_fit_results proper_rot "
-              "(nmatches).")
+              "WFI ra_v1/dec_v1 and pa_v3 (at V1) with the quaternion after removeAberration, referenced at the WFI "
+              "target aperture " + ("(from --siaf)" if any(wfi_apertures.values()) else "(not in --siaf: CGI_CEN used)")
+              + ". 'quat. - VA rem.' is the size of the aberration at V1 and in PA_V3 at CGI_CEN. Gaia fit: "
+              "meta.wcs_fit_results proper_rot (nmatches).")
+
+    # WFI-prime exposures: PA_V3 at the WFI target aperture vs model 5 at the planned epoch, and vs the plan
+    prime = sorted((w for w in wfi if not w["wfi_parallel"]), key=lambda w: (w["visit_id"], w["exposure"]))
+    if prime:
+        print(f"\n{'WFI-prime exposure':<26} {'t_mid':>8} {'aperture':>9} | {'offset':>7} {'PA_V3 tel.':>11} | "
+              f"{'tel. - model 5':>14} {'tel. - plan':>12}")
+        print(f"{'':<26} {'':>8} {'':>9} | {'(arcsec)':>7} {'(deg)':>11} | {'at epoch':>14} {'':>12}")
+        for w in prime:
+            prime_aperture = wfi_apertures.get(w["target_aperture"])
+            t_mid = Time([(w["start"] + (w["end"] - w["start"]) / 2).isot], scale="utc")
+            if prime_aperture is None:
+                print(f"{w['file'][:26]:<26} {t_mid.isot[0][11:19]:>8} {w['target_aperture']:>9} | "
+                      f"aperture not in the --siaf file")
+                continue
+            # visit target: the target of the visit's first exposure (later exposures may be dithered)
+            first = min((x for x in prime if x["visit_id"] == w["visit_id"]), key=lambda x: x["exposure"])
+            r_target = ecliptic_vector(first["target_ra"], first["target_dec"])
+            offset = np.degrees(np.linalg.norm(w["B_C_I"].T @ prime_aperture["u_B"] - r_target)) * 3600
+            pa_tel = getRomanPositionAngle(w["B_C_I"][:, :, None], prime_aperture).to_value(u.deg)[0]
+            vs_model, vs_plan = "-", "-"
+            if w["visit_id"] in epochs:
+                target = SkyCoord(ra=first["target_ra"] * u.deg, dec=first["target_dec"] * u.deg, distance=1e6 * u.pc,
+                                  pm_ra_cosdec=0 * u.mas / u.yr, pm_dec=0 * u.mas / u.yr, radial_velocity=0 * u.km / u.s,
+                                  frame="icrs", obstime=Time("J2000")).transform_to(BarycentricMeanEcliptic)
+                t_epoch = Time([epochs[w["visit_id"]]], scale="utc")
+                vs_model = f"{wrap(pa_tel - model5_pa(target, t_epoch, prime_aperture)[1][0]):+14.4f}"
+            if w["visit_id"] in plans:
+                vs_plan = f"{wrap(pa_tel - plans[w['visit_id']]):+12.4f}"
+            print(f"{w['file'][:26]:<26} {t_mid.isot[0][11:19]:>8} {w['target_aperture']:>9} | {offset:7.1f} "
+                  f"{pa_tel % 360:11.4f} | {vs_model:>14} {vs_plan:>12}")
+        print("WFI-prime: offset of the target aperture from the visit target (non-zero for dithered exposures); PA_V3 "
+              "at the target aperture from the WFI attitude (catalog frame), minus model 5 at the planned epoch of the "
+              "WFI visit (--epoch) for the visit target, and minus the planned PA_V3 (--plan).")
 
     print("\nHeader PA_V3 minus model (deg), files with in-flight SIAF headers:")
     for m, d in resid.items():

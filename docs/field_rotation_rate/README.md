@@ -541,7 +541,7 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
   4.4 h early. This is the same assumption as the roll-limit model above.
 * **Verification.** With the aperture offset, the Horizons position and velocity aberration, `roman_pointing`
   reproduces the STScI plans (OPUP "CGI Fixed v3pa@T"), the attitude telemetry (WFI metadata) and the CGI headers to
-  ≤ 0.004°, for CAR-55.1, 55.4, 101.1, 102.7 and 193.1. See
+  ≤ 0.004°, for CAR-55.1, 55.4, 101.1, 102.7, 193.1 and 193.2. See
   [`docs/attitude_model/README.md`](../attitude_model/README.md), section 6, and `tools/compare_header_pa.py`.
 * **Target and attitude limits.** Stellar parallax and proper motion are negligible. The FOR is taken as 54° ≤ ε ≤ 126°
   for the Sun angle of V1. With `v_obs_G` (or `--aberration`), `calcRomanAngles` returns the physical (apparent)

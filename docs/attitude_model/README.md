@@ -1,4 +1,4 @@
-# Optional accuracy improvements to the `roman_pointing` attitude model
+# Post-launch accuracy improvements to the `roman_pointing` attitude model
 
 `roman_pointing` computes Roman's nominal attitude for a target as follows:
 
@@ -8,18 +8,18 @@
 * `getRomanPositionAngle` returns the PA of V3 about V1.
 
 Three simplifications in this model each change Roman's position angle (PA_V3) or Sun angle by up to a few tenths of
-a degree. This note describes one opt-in change for each:
+a degree. This note describes optional features to account for each of these effects:
 
-* **A. CGI aperture on the target.** Operations place the CGI aperture, 0.386° from V1, on the target, and quote PA_V3
-  there. The aperture position comes from the Roman SIAF.
-* **B. Roman's actual position.** Roman orbits L2 at up to 840,000 km from it. The position comes from the JPL
-  Horizons ephemeris.
+* **A. CGI aperture boresight on the target.** Operations place the CGI aperture boresight, 0.386° from V1, on the target, and quote PA_V3
+  there. The aperture position comes from the Roman Science Instrument Aperture File ([SIAF](https://roman-docs.stsci.edu/simulation-tools/additional-simulation-tools/pysiaf-for-roman)).
+* **B. Roman's actual position.** Roman orbits L2 at up to 840,000 km from it. The position comes from the
+  [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/) ephemeris.
 * **C. Velocity aberration.** Roman moves at about 30 km/s, which displaces the apparent target and Sun directions by
-  up to 20.6″. The attitude is solved from the apparent directions and then expressed in the catalog frame.
+  up to 21″. The attitude is solved from the apparent directions and then expressed in the catalog frame.
 
 All three are implemented in `roman_pointing`, with tests. With the new arguments left at their
 defaults, every current output is unchanged. With all three enabled, the model reproduces the Roman SOC observation plans,
-the attitude telemetry and the CGI header pointing of five commissioning visits to ≤ 0.004° (section 6).
+the attitude telemetry, and the CGI header pointing values of six commissioning visits to ≤ 0.004° (section 6).
 
 ## 1. Summary
 
@@ -37,7 +37,7 @@ the attitude telemetry and the CGI header pointing of five commissioning visits 
 
 All three change the PA_V3 rate by ≲ 2%, so the analytic rate model in `field_rotation.py` remains valid as it is.
 
-Verification against the Roman SOC observation plans (section 6.3, Table 1). The residual is the planned PA_V3 (OPUP "CGI
+Verification against the Roman SOC observation plans (section 6.3). The residual is the planned PA_V3 (OPUP "CGI
 Fixed v3pa@T") minus the model's nominal PA_V3 at the planned attitude epoch; the table gives its largest absolute
 value over the three visits with plans.
 
@@ -59,7 +59,7 @@ value over the three visits with plans.
     aberration-free: the catalog frame.
   * The attitude quaternion and the CGI L1 header pointing keywords (`RA_BORE`, `RA_APER`, `PA_V3`, `PA_APER`)
     describe the same attitude in the apparent frame of the moving observatory (section 6.2).
-  * The two frames differ by up to 20.6″ in position and 20.6″ × tan |Dec| in PA.
+  * The two frames differ by up to 21″ in position and 20.6″ × tan |Dec| in PA.
 * **Which PA_V3.** CPGS and the plans quote PA_V3 at the aperture, i.e. the local direction of V3 at the target, in
   the catalog frame. With an `aperture`, `getRomanPositionAngle(B_C_I, aperture)` returns this quantity.
   * With `aperture=None` it returns PA_V3 at V1, which differs by meridian convergence (up to 0.83° for |Dec| < 60°
@@ -93,13 +93,11 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
 
   The PA_V3 at the target therefore changes by
 
-    ΔPA ≈ V2Ref/tan ε − V2Ref·V3Ref.
+    ΔPA ≈ V2Ref/tan ε − V2Ref·V3Ref, with V2Ref and V3Ref in units of radians.
 
-  * Against the implementation the fit slope is 1.0000, and the residual is < 10⁻⁶°. The second term is a constant
-    −0.00125°.
-  * |ΔPA| is 0 at ε = 90° and at most 0.22° at the FOR edges, independent of declination: +0.06° to +0.09° for ε Eri
-    (Jan 19–25, 2027) and +0.20° for HIP 71618 (ε ≈ 122°).
-  * The rate changes by ≤ |V2Ref| λ̇☉/sin²ε ≈ 0.008°/day, ≤ 0.07° over a 9-day execution span.
+  * The second term is a constant −0.00125°; the residual error of this approximation is < 10⁻⁶°.
+  * |ΔPA| is 0 at ε = 90° and at most 0.22° at the FOR edges.
+  * The rate changes by ≤ |V2Ref| λ̇☉/sin²ε ≈ 0.008°/day.
 
   ![Geometry of the nominal-roll change](boresight_offset_geometry.png)
 
@@ -114,13 +112,12 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
   The target's FOR becomes 54.23° ≤ ε ≤ 126.23°, which moves the window edges by ≈ 0.24 day near the ecliptic.
 * **Roll axis.** A 15° roll about V1 moves the target 362″ off the aperture, far outside the ±11″ EXCAM field, and
   changes the aperture PA by 14.7°–15.0°. A roll about the aperture axis keeps the target fixed and changes the
-  aperture PA by exactly the roll. The Sun-relative roll then differs from it by ≤ 0.05°, and V1's Sun angle by
-  ≤ 0.07°.
+  aperture PA by exactly the roll.
 
 ### 3.2 Implementation
 
 * **SIAF extract and reader.** The full SIAF release is 16 MB, almost all of it WFI SpecPars grids, and the public
-  pysiaf repository does not yet hold the commissioning SIAF.
+  [pysiaf](https://github.com/spacetelescope/pysiaf) repository does not yet hold the commissioning SIAF.
   * `src/roman_pointing/siaf/roman_siaf_inflight_20261021_CGI.xml` is a 4 kB copy of the release header and its CGI
     `SiafEntry` blocks, made with `tools/extract_siaf_cgi.py`, and packaged via `[tool.setuptools.package-data]`.
   * `getSIAFAperture(aper_name="CGI_CEN", siaf_file=SIAF_FILE)` returns `V2Ref`, `V3Ref`, `V3IdlYAngle`,
@@ -140,14 +137,12 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
 * **`getRomanPositionAngle(..., aperture=None)`.** Measures the PA about the aperture direction, projecting both north
   and b₃ onto the plane perpendicular to it. The projection of b₃ is the local +V3 direction at the aperture, the
   quantity pysiaf's `posangle` returns.
-* **`getEXCAMPositionAngle(..., aperture=None)`.** Gives PA_APER = PA_V3 + V3IdlYAngle + 180° = PA_V3 + 149.86°,
-  instead of the hard-coded 150°. CGI LOS_Y is EXCAM −Y by definition.
+* **`getEXCAMPositionAngle(..., aperture=None)`.** Gives PA_APER = PA_V3 + V3IdlYAngle + 180° = PA_V3 + 149.86° for the 2026-10-21 CGI SIAF.
 
 ### 3.3 Tests (`tests/test_aperture_offset.py`)
 
 * `aperture=None` reproduces the main branch to 10⁻⁹° (regression values). An aperture at V1 (u_B = e₁) reproduces
   the default attitude, roll and PA.
-* The packaged extract has the current ideal-frame convention (|V3IdlYAngle + 30°| < 1°).
 * For 25 targets across the FOR:
   * the aperture is on the target (< 10⁻⁹) and b₂·r̂_sun = 0;
   * the Sun angle of V1 minus the target's equals V3Ref to 10⁻³°;
@@ -161,8 +156,8 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
 ### 4.1 Effect
 
 `getL2Positions` scales the Earth's barycentric position by the collinear L2 distance. Every Sun direction, Sun angle
-and nominal attitude follows from this position. Roman's Horizons trajectory (`-211`) is available from 2026-08-30
-to 2028-11-08 (as of 2026-11-11; JPL extends and updates it).
+and nominal attitude follows from this position. Roman's [Horizons](https://ssd.jpl.nasa.gov/horizons/) trajectory (`-211`) is available from 2026-08-30
+to 2028-11-08 (as of 2026-11-11; NASA will extend and update it).
 
 * **Position.** Roman is 290,000–840,000 km from the ideal L2 point, so the Sun direction differs by 0.06°–0.31°.
 * **Sun angle and PA_V3.** For 400 random targets at random dates, the Sun angle differs by up to 0.30° (rms 0.15°)
@@ -176,22 +171,22 @@ ecliptic vector with a fixed obliquity.
 
 ### 4.2 Implementation
 
-The implementation follows the astroquery recipe of the `roman_pointing_demo` notebook ("Using a real Roman Orbit")
-and the structure of the EXOSIMS Roman observatory (`EXOSIMS/Observatory/Roman.py`): a Horizons query, a cubic-spline
+The implementation follows the astroquery recipe of the [`roman_pointing_demo` notebook](https://github.com/roman-corgi/roman_pointing/blob/main/Notebooks/roman_pointing_demo.ipynb) ("Using a real Roman Orbit")
+and the structure of the [EXOSIMS Roman observatory](https://github.com/dsavransky/EXOSIMS/blob/master/EXOSIMS/Observatory/Roman.py) (`EXOSIMS/Observatory/Roman.py`): a Horizons query, a cubic-spline
 interpolant of the table, and its evaluation at the requested times.
 
 * **`queryRomanOrbit(ts, step="1d")`** queries Horizons with astroquery,
   `Horizons(id="-211", location="@0", ...).vectors(refplane="earth")`, for one table spanning `ts`, padded by
   2 days. It takes about 1 s per call.
-  * The times are TDB, the time scale of Horizons vector tables. Passing UTC strings, as the notebook does, shifts the
-    positions by 69 s, about 2,100 km: 0.8″ in Sun angle and 2.8″ in PA_V3 for 11 UMi.
+  * The times are TDB (Barycentric Dynamical Time, the uniform time scale of solar-system ephemerides, about
+    UTC + 69 s in 2026), the time scale of Horizons vector tables.
 * **`queryRomanOrbitSpan(start, stop, step)`** makes the query for `queryRomanOrbit`.
   * Its results are cached in memory for the Python session (`functools.lru_cache`), so tools that loop over targets
     with the same time span make one query. They are not cached on disk (astroquery's `cache=False`), because the
     Horizons trajectory of Roman is updated after orbit determination.
   * If the span extends beyond the Horizons coverage, it is clipped to the coverage edge reported in the Horizons
     error message ("No ephemeris … prior to/after A.D. …") and queried again.
-* **`genRomanOrbitInterpolant(vectors_table)`** is the EXOSIMS function of that name: a `CubicSpline` over MJD, with
+* **`genRomanOrbitInterpolant(vectors_table)`** is the [EXOSIMS](https://github.com/dsavransky/EXOSIMS/blob/master/EXOSIMS/Observatory/Roman.py) function of that name: a `CubicSpline` over MJD, with
   the unit check. The table times are labeled TDB.
   * The spline is within 0.5 km of hourly Horizons values, and allows any `ts`, not only the daily table grid of the
     notebook.
@@ -204,10 +199,8 @@ interpolant of the table, and its evaluation at the requested times.
   Horizons table (beyond the coverage) get the L2 approximation, with a warning, and the other times the Horizons
   orbit. A span that crosses the coverage edge, like a 2-year observability window, therefore uses Horizons where
   it can.
-* **Not yet done.** A reader for the FDF OEM predicts used by the SOC would be an offline alternative. Each OEM file
-  covers only weeks, so Horizons is the better default.
 
-### 4.3 Tests (`tests/test_roman_ephemeris.py`; network, skipped when offline)
+### 4.3 Tests (`tests/test_roman_ephemeris.py`; tests skipped when there is no network access)
 
 * `getRomanPositions` lies 2–9 × 10⁵ km from `getL2Positions` within the coverage.
 * `genRomanOrbitInterpolant` reproduces the table at its nodes, and gives the same result for a table in km.
@@ -218,6 +211,9 @@ interpolant of the table, and its evaluation at the requested times.
   only the times outside get L2 values.
 * A repeated call for the same span uses the session cache.
 * `pa_v3_drift` uses the Horizons orbit by default, and `ephemeris="L2"` the L2 point.
+* The full model (A + B + C) reproduces the OPUP planned PA_V3 to 0.005°. For the CGI-prime visits this is
+  "CGI Fixed v3pa@T", which A + B alone misses by up to 0.009°. For the WFI-prime visits of CAR-193.2
+  it is the V3PA at V1.
 
 ## 5. Change C: velocity aberration
 
@@ -233,18 +229,17 @@ The physical attitude therefore follows from the aberrated target and Sun direct
 attitude in the catalog frame, by removing the aberration at the aperture.
 
 * **Sun term.** The Sun's apparent longitude lags its geometric longitude by 20.5″. This is the same as evaluating
-  the nominal roll 8.3 min earlier, ΔPA ≈ −8.3 min × dPA_V3/dt, i.e. 0.003°–0.009° for typical rates. Its sign
-  follows the rate, so it flips between the ecliptic hemispheres.
+  the nominal roll 8.3 min earlier, ΔPA ≈ −8.3 min × dPA_V3/dt, i.e. 0.003°–0.009° for typical rates.
 * **Target term.** Up to ≈ 20.6″/tan ε. For 120 random targets in the FOR: ≤ 0.004° at ε = 54°–60° and 120°–126°,
   and ≤ 0.0014° at 75°–105°.
 * **Frame of the result.** The apparent-frame PA_V3, as in the CGI headers, differs from the catalog-frame PA_V3 by
-  up to 20.6″ × tan |Dec|: 0.010° at 60°, 0.032° at 80° and 0.065° at 85°.
+  up to 21″ × tan |Dec|: 0.010° at 60°, 0.032° at 80° and 0.065° at 85°.
 * **Field of regard.** The apparent Sun angle differs from the geometric one by ≤ 20.6″ (0.006°), about 9 minutes of
   FOR-edge timing.
 
 ### 5.2 Implementation
 
-* **`applyAberration(rhat, v_obs_G, inverse=False)`** implements the exact (special-relativistic) aberration of
+* **`applyAberration(rhat, v_obs_G, inverse=False)`** implements the special-relativistic aberration of
   3×n unit vectors. With β = v/c and γ = (1 − β²)^(−1/2):
 
     r̂′ = [r̂/γ + β + γ/(1+γ) (r̂·β) β] / (1 + r̂·β),
@@ -269,59 +264,63 @@ attitude in the catalog frame, by removing the aberration at the aperture.
 * `removeAberration` puts the aperture on the catalog target and agrees with an independent two-point transport of
   the PA to 10⁻⁶°.
 * `pa_v3_drift(aberration=True)` changes the 11 UMi PA_V3 by the expected few 0.001° without changing the rate.
-* Network: the OPUP regression of section 6.3, to 0.005°, is in `tests/test_roman_ephemeris.py`.
 
 ## 6. Verification with flight data
 
 ### 6.1 Data
 
-| Visit | Date (2026) | Target | CGI L1/L2b (CDMS) | WFI parallel (`_wcs.asdf`) | Planned attitude epoch |
+| Visit | Date (2026) | Target | CGI L1 (CDMS) | WFI (`_wcs.asdf`) | Planned attitude epoch |
 |---|---|---|---|---|---|
 | CAR-55.1 | Oct 18 | LMC field (80.5525°, −69.5134°) | `0115601001001001001` (515) | `0103201001001001001` | 291/04:44:00 |
 | CAR-55.4 | Oct 22 | LMC field | `0115601002001001001` (520) | `0103202002001001001` | 295/07:03:46 |
-| CAR-102.7 | Oct 25 | n/a | `0110701003002001001` (520) | — | 298/12:04 (Jira) |
-| CAR-101.1 | Oct 26 | n/a | `0110601001002001001` (520) | — | 299/20:45 (Jira) |
+| CAR-102.7 | Oct 25 | n/a | `0110701003002001001` (520) | — | 298/12:04 (planned) |
+| CAR-101.1 | Oct 26 | n/a | `0110601001002001001` (520) | — | 299/20:45 (planned) |
 | CAR-193.1 | Nov 1 | 11 UMi (229.2745°, +71.8239°) | `0116001001001001001` (521) | `0104001001001001001` | 305/04:57:00 |
+| CAR-193.2 | Nov 12 | WFI-prime 2×1 mosaic: (150.0529°, +2.1405°) and (150.3673°, +2.4193°) | `0116001002002001001` (522), parallel darks | `0104902002001001001`, `…001002`, `…002001`, `…002002` (prime) | 315/23:28:23, 316/00:08:37, 316/00:19:00, 316/00:25:09 |
 
-* **CGI:** L1 files from MAST (`roman_cgi`). For CAR-102.7, CAR-101.1 and two late CAR-193.1 frames, L2b files
-  produced by the CGI DRP from the L1 files were used; they carry the same primary-header pointing keywords.
-* **WFI:** `_wcs.asdf` files from MAST (`roman`), 49 kB each. They contain:
+* **CGI:** L1 files from [MAST](https://mast.stsci.edu/) (`roman_cgi`). (L2b files of the same frames carry identical pointing keywords and give identical results.)
+* **CAR-193.2** reverses the roles: WFI is prime (CAR-198.2, with WFI_CEN on the target and dithers), and CGI takes
+  dark frames in parallel. The CGI headers have no `RA`/`DEC`; their pointing keywords are complete.
+* **WFI:** `_wcs.asdf` files from [MAST](https://mast.stsci.edu/search/ui/#/roman) (`roman`), 49 kB each. They contain:
   * `meta.pointing`: `ra_v1`, `dec_v1` and `pa_v3` are `CALCULATED`, i.e. from the attitude telemetry. `quaternion`
     is the raw ACS attitude quaternion `SCF_AC_SDR_QBJ` at mid-exposure (scalar last, ICRS to body).
   * `meta.ephemeris`: the predicted spacecraft state.
   * `meta.wcs_fit_results`: the alignment of the WFI image to Gaia stars.
 
-  The 209 MB `_uncal.asdf` of CAR-193.1 exposure 0004 has the same metadata and is not needed.
-* **Retrieving the files.** Search MAST (https://mast.stsci.edu/search/ui/#/roman) by the visit IDs above: the
+* **Retrieving the files.** Search MAST by the visit IDs above: the
   `roman_cgi` collection for CGI and the `roman` collection for WFI. Commissioning data may still be in their
-  exclusive-access period, which needs a MAST token. The files used:
+  exclusive-access period, which requires an authentication token. The files used:
 
   | Visit | CGI files (`cgi_<visit ID>_<time>_<level>.fits`) | WFI files |
   |---|---|---|
   | CAR-55.1 | `…_20261018t0532019_l1_` | `r0103201001001001001_0003_wfi01_f129_wcs.asdf` |
   | CAR-55.4 | `…_20261022t0739286_l1_` | `r0103202002001001001_0002_wfi01_f129_wcs.asdf` |
-  | CAR-102.7 | `…_20261025t1452128_l2b`, `…_20261025t1452221_l2b` | — |
-  | CAR-101.1 | `…_20261026t1828419_l2b`, `…_20261026t1853167_l2b`, `…_20261026t1917119_l2b` | — |
-  | CAR-193.1 | `…_20261101t0051382_l1_`, `…_20261101t0101510_l1_`, `…_20261101t0107434_l1_` (first, middle and last of the 27 frames during the WFI parallel); `…_20261101t0145004_l2b`, `…_20261101t0148104_l2b` | `r0104001001001001001_0004_wfi01_f129_wcs.asdf`, `r0104001001001001001_0013_wfi01_f129_wcs.asdf` |
-* **Plans:** STScI OPUP Product Delivery Notices (RSC Confluence) give the visit-slew and visit-begin times, "CGI
-  Fixed v3pa@T" (PA_V3 at the target, catalog frame), V1 and the roll from nominal. The Jira TSRs (ROMCOM-369, -393,
-  -416, -417, -426) give the planned and actual execution times.
+  | CAR-102.7 | `…_20261025t1452128_l1_`, `…_20261025t1452221_l1_` | — |
+  | CAR-101.1 | `…_20261026t1828419_l1_`, `…_20261026t1853167_l1_`, `…_20261026t1917119_l1_` | — |
+  | CAR-193.1 | `…_20261101t0051382_l1_`, `…_20261101t0101510_l1_`, `…_20261101t0107434_l1_` (first, middle and last of the 27 frames during the WFI parallel), `…_20261101t0145004_l1_`, `…_20261101t0148104_l1_` (after it) | `r0104001001001001001_0004_wfi01_f129_wcs.asdf`, `r0104001001001001001_0013_wfi01_f129_wcs.asdf` |
+  | CAR-193.2 | `…_20261112t0057073_l1_` (during WFI exposure 0002 of the first visit) | `r0104902002001001001_000[1-4]_wfi01_f062_wcs.asdf`, `…001002_000[1-4]_wfi01_f062`, `…002001_000[1-4]_wfi01_f158`, `…002002_000[1-4]_wfi01_f158` (16 files) |
+* **Plans:** the Roman SOC observation plans (OPUP timelines; internal to the project) give, for each visit, the slew
+  and visit-begin times, the planned PA_V3 at the target ("CGI Fixed v3pa@T" or "WFI Fixed v3pa@T", catalog frame),
+  V1 with its PA_V3, and the roll from nominal. The planned and actual execution times come from SOC records.
+* **WFI_CEN** (V2Ref 1686.548″, V3Ref −1014.664″, 0.547° from V1) comes from the full
+  `roman_siaf_inflight_20261021.xml` release. The packaged extract holds only the CGI apertures.
 
 ### 6.2 Conventions established
 
-* **Attitude epoch.** The plan fixes PA_V3 at the start of the visit slew. This is also the Jira "Planned Execution
-  Time", except for CAR-55.4 (Jira 06:58).
+* **Attitude epoch.** 
+  * The plan fixes PA_V3 at the start of the visit slew. This is usually the same as the planned execution time.
   * The OPUP roll grows at the Sun's rate from about 0 at that epoch.
-  * The attitude is held inertially fixed when the visit executes at another time: here between 4.4 h early
-    (CAR-193.1) and 22 min late (CAR-55.1).
-* **Frames (change C).**
+  * The attitude is computed once, for t₀, and is not recomputed when the visit executes at another time: the planned PA_V3 is flown, so the roll from nominal is the PA_V3 rate times the time offset (4.4 h early for CAR-193.1, for example).
+* **Coordinate frames (change C).**
   * The CGI L1 pointing keywords equal the raw ACS attitude quaternion (`SCF_AC_SDR_QBJ`, carried in the WFI
-    metadata) to 0.07″–0.19″ and 5 × 10⁻⁵° (Table 4).
-  * WFI `meta.pointing` is the same quaternion with the aberration removed (0.02″–0.08″, 7 × 10⁻⁵°), and agrees
-    with the OPUP V1 and V3PA to their rounding.
-  * The Gaia alignment of the WFI images changes the orientation by only 0.002°.
-  * The two frames differ by 20.2″–20.7″ in position, and by Δα sin δ in PA: −0.0166° for 11 UMi and −0.0085° to
-    −0.0094° for the LMC field.
+    metadata) to 0.07″–0.19″ and 5 × 10⁻⁵°.
+  * WFI `meta.pointing` is the same quaternion with the aberration removed at the WFI target aperture (WFI_CEN),
+    to 0.003″–0.04″ and 10⁻⁵°, and agrees with the OPUP V1 and V3PA to their rounding.
+  * The WCS metadata describing the Gaia alignment of the WFI images changes the orientation by only 0.002°, much
+    less than the 0.009°–0.017° PA difference between the apparent and catalog frames. The catalog frame,
+    used by the observation plans and the WFI `meta.pointing`, is therefore the frame of the true (Gaia) sky.
+  * The positions of the target in the apparent (aberrated) and catalog (aberration-free) frames differ by (v/c) sin θ, where θ is the angle between the target and Roman's velocity:
+    20.1″–20.7″ for 11 UMi and the LMC field (θ near 90°), but only 5.5″ for the CAR-193.2 field (θ ≈ 15°).
 * **Aperture (change A).**
   * The header PA_V3 is the local PA_V3 at the aperture: the attitude defined by the header boresight and aperture
     positions reproduces it to < 10⁻⁴°.
@@ -335,140 +334,20 @@ attitude in the catalog frame, by removing the aberration at the aperture.
 
 ### 6.3 Results
 
-Symbols used in the tables:
-
-| Symbol | Meaning |
-|---|---|
-| t₀ | Planned attitude epoch (section 6.1) |
-| t | A time during the visit (visit begin, visit end, or a WFI mid-exposure time) |
-| PA_plan | OPUP "CGI Fixed v3pa@T": the PA_V3 at the target that the plan commands and holds for the whole visit (catalog frame) |
-| PA_nom(t) | `roman_pointing` model: PA_V3 at the target of the nominal attitude at time t (catalog frame unless stated) |
-| R(t) = PA_nom(t) − PA_plan | Roll from nominal at time t, in the sign convention of `applyRollAngle` (a roll of +r lowers PA_V3 by r) |
-| PA_hdr | CGI header `PA_V3` (apparent frame) |
-| PA_tel | PA_V3 at CGI_CEN from the WFI attitude telemetry, `meta.pointing` (catalog frame) |
-| PA_tel,V1 | PA_V3 as the WFI telemetry reports it, `meta.pointing.pa_v3`, which refers to V1 (catalog frame) |
-| PA_pred,V1(t) | `roman_pointing` prediction of PA_tel,V1 from t, PA_plan and the SIAF CGI_CEN offset (Table 3) |
-
-**Table 1. Planned PA_V3: residual PA_plan − PA_nom(t₀), for each model.** A residual of 0 means the model reproduces
-the plan. PA_nom from `pa_v3_drift`; PA_plan is rounded to 0.001° in the OPUP.
-
-| Visit | PA_plan | Previous baseline | A | B | A + B | A + B + C |
-|---|---|---|---|---|---|---|
-| CAR-55.1 | 122.989° | −0.2958° | −0.3035° | −0.0014° | −0.0094° | −0.0035° |
-| CAR-55.4 | 127.041° | −0.3043° | −0.3104° | −0.0030° | −0.0094° | −0.0035° |
-| CAR-193.1 | 193.115° | +0.2697° | +0.2892° | −0.0139° | +0.0061° | +0.0009° |
-
-**Table 2. Roll from nominal at visit begin and end: model prediction vs the OPUP's listed value.**
-
-* "Previous baseline roll" and "A + B + C roll" are R(t) = PA_nom(t) − PA_plan, with PA_nom from the previous
-  baseline model and from model A + B + C.
-* "OPUP roll" is the "Roll" column of the OPUP timeline at the same time, rounded to 0.001°. Its sign convention is
-  not documented. It matches R(t) when the OPUP roll is taken as nominal minus commanded.
-* "Residual" is OPUP roll − A + B + C roll.
-
-Both rolls grow from about 0 at t₀ at the PA_V3 rate, because PA_plan is held while the nominal attitude follows the
-Sun.
-
-| Visit | Time | Previous baseline roll | A + B + C roll | OPUP roll | Residual (OPUP − A + B + C) |
-|---|---|---|---|---|---|
-| CAR-55.1 | visit begin 04:55:06 | +0.3034° | +0.0111° | +0.008° | −0.0031° |
-| | visit end 05:10:23 | +0.3139° | +0.0216° | +0.018° | −0.0036° |
-| CAR-55.4 | visit begin 08:02:24 | +0.3447° | +0.0438° | +0.040° | −0.0038° |
-| | visit end 08:17:41 | +0.3552° | +0.0544° | +0.051° | −0.0034° |
-| CAR-193.1 | visit begin 05:03:20 | −0.2739° | −0.0051° | −0.004° | +0.0011° |
-| | visit end 05:32:38 | −0.2937° | −0.0249° | −0.024° | +0.0009° |
-
-The residuals are constant over each visit, so the model's roll rate matches the plan's. Their values equal the
-Table 1 residuals for model A + B + C, within the OPUP rounding. The previous baseline model would predict rolls 0.27°–0.31°
-from the listed ones.
-
-**Table 3. CGI header and WFI telemetry vs the model (A + B + C).** Output of `tools/compare_header_pa.py` with the
-planned epochs t₀ and the planned PA_V3 (`--epoch`, `--plan`). All three columns are residuals; 0 means the model
-reproduces the measurement.
-
-* **(a) PA_hdr − PA_nom,app(t₀).** PA_nom,app is the model PA_V3 in the apparent frame, the frame of the header.
-* **(b) PA_tel − PA_nom(t₀).** The attitude actually held, compared with the model's nominal attitude for the plan.
-* **(c) PA_tel,V1 − PA_pred,V1(t_exp)** tests the prediction of the telemetry during execution. t_exp is a WFI
-  mid-exposure time. PA_pred,V1(t_exp) is computed from three inputs:
-  * t_exp itself;
-  * PA_plan;
-  * the SIAF CGI_CEN offset, which links the aperture (where PA_plan refers) to V1 (where PA_tel,V1 refers).
-
-  The steps are: the A + B + C nominal attitude at t_exp, in the catalog frame (`removeAberration`); a roll about the
-  aperture by its roll from nominal R(t_exp) = PA_nom(t_exp) − PA_plan (`applyRollAngle(..., aperture)`), so that the
-  PA_V3 at the aperture equals PA_plan; and the PA_V3 at V1 of the rolled attitude (`getRomanPositionAngle`).
-
-| Visit | (a) PA_hdr − PA_nom,app(t₀) | (b) PA_tel − PA_nom(t₀) | (c) PA_tel,V1 − PA_pred,V1(t_exp) | t_exp (UTC) | R(t_exp) |
-|---|---|---|---|---|---|
-| CAR-55.1 | not compared (CDMS 515) | −0.0040° | −0.0004° | 05:29:50 | +0.035° |
-| CAR-55.4 | −0.0029° | −0.0029° | +0.0007° | 07:36:07 | +0.026° |
-| CAR-102.7 | +0.0032° | no WFI data | no WFI data | | |
-| CAR-101.1 | +0.0023° | no WFI data | no WFI data | | |
-| CAR-193.1 | +0.0011° to +0.0012° | +0.0010° to +0.0012° | +0.0002° to +0.0003° | 00:50:55, 01:07:30 | +0.165°, +0.154° |
-
-* Column (c) is at the level of the 0.001° rounding of PA_plan. It tests:
-  * the SIAF aperture geometry and the roll about the aperture (change A);
-  * the conversion of PA_V3 from the aperture to V1, by meridian convergence: 1.061° for CAR-193.1 (Dec +72°),
-    0.078° and 0.004° for CAR-55.1 and 55.4 (Dec −70°, rolled 4° apart);
-  * the catalog frame of the result (change C).
-* Column (c) does not depend on the nominal-attitude model, because an attitude with the aperture on the target and
-  a given PA_V3 there is unique. The model enters only through R(t_exp).
-* R(t_exp), the last column, is the roll the plan's attitude had from nominal during execution. It equals the PA_V3
-  rate times the difference between t_exp and t₀; CAR-193.1, for example, executed 4.1 h before t₀, and
-  4.1 h × 0.98°/day = 0.17°.
-
-**Table 4. Frame of the CGI header and WFI pointing: comparisons with the raw attitude quaternion.** For each WFI
-exposure, the quaternion in its `meta.pointing` is compared with the CGI L1 frame taken during it. Second table of
-`tools/compare_header_pa.py --wfi`. The quaternion is read as an ICRS-to-body DCM (scalar last). "Aberration removed"
-is `removeAberration` with `getRomanVelocities` at mid-exposure. All columns except the last two are residuals.
-
-| Visit, WFI exposure (t_mid, UTC) | CGI `RA/DEC_BORE` − quaternion V1 | CGI `RA/DEC_APER` − quaternion CGI_CEN | CGI `PA_V3` − quaternion PA_V3 at CGI_CEN | WFI V1 − quaternion V1, aberration removed | WFI `pa_v3` − same, PA_V3 at V1 | Quaternion − aberration removed: V1, PA_V3 at CGI_CEN | Gaia fit rotation (stars) |
-|---|---|---|---|---|---|---|---|
-| CAR-55.1, 0003 (05:29:50) | 0.139″ | not compared (CDMS 515) | not compared | 0.021″ | −0.000005° | 20.63″, −0.0085° | 0.0019° (6690) |
-| CAR-55.4, 0002 (07:36:07) | 0.071″ | 0.071″ | +0.000053° | 0.021″ | −0.000006° | 20.68″, −0.0094° | 0.0024° (6704) |
-| CAR-193.1, 0004 (00:50:55) | 0.117″ | 0.117″ | −0.000039° | 0.075″ | −0.000065° | 20.16″, −0.0166° | 0.0019° (61) |
-| CAR-193.1, 0013 (01:07:30) | 0.185″ | 0.185″ | −0.000053° | 0.075″ | −0.000065° | 20.16″, −0.0166° | 0.0019° (62) |
-
-* **The CGI header is the raw quaternion (apparent frame).** Columns 2–4 agree to 0.2″ and 5 × 10⁻⁵°. That is
-  1 % of the aberration (column 7). The CGI frame and WFI mid-exposure times differ, and attitude motion between them
-  plausibly explains the remainder.
-* **WFI `meta.pointing` is the quaternion with the aberration removed (catalog frame).** Columns 5–6 agree to 0.08″
-  and 7 × 10⁻⁵°. The remainder is the differential aberration between CGI_CEN, where `removeAberration` is
-  referenced, and V1, 0.39° away.
-* **The catalog frame is the true sky.** The Gaia fit (column 8) rotates the WFI orientation by only 0.002°, far
-  less than the 0.009°–0.017° between the two frames.
-
-**What each change contributes here** (Table 1):
-
-* **B** removes the largest error for these dates: 0.28°–0.30°.
-* **A** then removes 0.006°–0.020°; it is small here only because these targets are near ε = 90°.
-* **C** removes the remaining 0.005°–0.006°. It changes sign between the LMC field and 11 UMi, as predicted.
-* With all three, the plan, the attitude telemetry and the CGI headers agree with the model to ≤ 0.004° in both
-  ecliptic hemispheres (Tables 1–3).
-* Given the plan's PA_V3, the model predicts the telemetry PA_V3 during execution to ≤ 0.0007° (Table 3, column (c)).
-
-Reproduce with the files of section 6.1. The first argument is a directory of CGI FITS files; `--wfi` takes the WFI
-`_wcs.asdf` files of the same visit. Tables 3 and 4 come from the first three commands, and the CAR-102.7 and
-CAR-101.1 rows from the fourth (the five L2b files).
-
-```bash
-python tools/compare_header_pa.py CAR193.1_CGI_L1/ \
-    --epoch 0116001001001001001=2026-11-01T04:57:00 --plan 0116001001001001001=193.115 \
-    --wfi CAR193.1_WFI/*_wcs.asdf
-python tools/compare_header_pa.py CAR55.1_CGI_L1/ \
-    --epoch 0115601001001001001=2026-10-18T04:44:00 --plan 0115601001001001001=122.989 \
-    --wfi CAR55.1_WFI/*_wcs.asdf
-python tools/compare_header_pa.py CAR55.4_CGI_L1/ \
-    --epoch 0115601002001001001=2026-10-22T07:03:46 --plan 0115601002001001001=127.041 \
-    --wfi CAR55.4_WFI/*_wcs.asdf
-python tools/compare_header_pa.py CGI_L2b/ \
-    --epoch 0110701003002001001=2026-10-25T12:04:00 --epoch 0110601001002001001=2026-10-26T20:45:00 \
-    --epoch 0116001001001001001=2026-11-01T04:57:00
-```
+With all three changes, the model reproduces the planned PA_V3 (OPUP "CGI Fixed v3pa@T") of the three CGI-prime
+visits with plans to ≤ 0.0035° at the planned attitude epoch, and the PA_V3 from the attitude telemetry and the CGI
+headers of the CGI-prime visits to ≤ 0.004°; the previous baseline model differs from the plans by 0.27°–0.30°. For
+these dates, change B removes most of that error (0.28°–0.30°), A removes 0.006°–0.020° (small because the targets are
+near ε = 90°), and C removes the remaining 0.005°–0.006°, changing sign between the LMC field and 11 UMi. The model's
+roll from nominal grows at the OPUP's rate over each visit, and given the plan's PA_V3, the model predicts the PA_V3 at
+V1 in the telemetry during execution to ≤ 0.0007°. For the four WFI-prime visits of CAR-193.2, with WFI_CEN on the
+target, the full model matches the flown PA_V3 to +0.0022°, against 0.08° for the previous baseline. The comparisons
+with the CGI headers and WFI telemetry were made with `tools/compare_header_pa.py` (usage examples in its docstring);
+the full result tables are documented in an internal memo on the CPP Collaboration confluence workspace.
 
 ## 7. Interfaces and scope
 
-All three changes together, for the PA_V3 that CPGS and the plans quote:
+All three changes together, for the PA_V3 that the Roman Science Support Center CPGS and the plans quote:
 
 ```python
 aperture = getSIAFAperture()                                         # A
@@ -518,7 +397,3 @@ pa_v3 = getRomanPositionAngle(removeAberration(B_C_I, v_obs_G, aperture), apertu
 * **Future SIAF updates.** When a new SIAF release arrives, regenerate the extract, update `SIAF_FILE`, and remove the
   previous extract.
   * During science operations, the most recent SIAF will be synced to the public pysiaf repo. It will then be possible to modify `getSIAFAperture` to import the aperture offset and orientation data directly from pysiaf (https://github.com/spacetelescope/pysiaf).       
-* **Residual PA discrepancies.** For both LMC visits the residual PA_plan − PA_nom(t₀) (Table 1, A + B + C) is
-  −0.0035°. For the northern visits the residuals in Tables 1 and 3 are +0.001° to +0.003°.
-  * The residual is equivalent to evaluating the nominal attitude about 5 min earlier, so it may come from a
-    visit-dependent definition of the attitude epoch.
