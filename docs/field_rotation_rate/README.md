@@ -165,7 +165,7 @@ $$ \frac{d\,\mathrm{PA_{V3}}}{dt} = -\dot\lambda_\odot\,\frac{\sin\beta}{\sin^2\
 
 If the absolute PA is needed: with obliquity ι = 23.44°,
 η = −atan2(sin ι cos λ, cos β cos ι − sin β sin ι sin λ). This reproduces `getRomanPositionAngle` to < 0.005° for its
-default (boresight) model: V1 on the target, observatory at L2, geometric Sun direction, catalog frame.
+default (boresight) model: V1 on the target, observatory at L2, geometric Sun direction, barycentric coordinate frame.
 
 The PA_V3 that CPGS and the observation plans use differs from this model by three small corrections. Each changes
 the rate by ≲ 2%, so the rate formula holds, but they matter for the absolute PA (section 7):
@@ -530,19 +530,20 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
   * Field of regard: the Sun-angle limits apply to V1, which is displaced toward the Sun by V3Ref = −0.234°. The
     target's FOR is therefore 54.23° ≤ ε ≤ 126.23°, which moves the window edges by ≈ 0.24 day near the ecliptic.
 * **Velocity aberration.** Roman moves at about 30 km/s, which displaces apparent directions by up to 20.6″. The
-  physical attitude follows from the apparent target and Sun directions; the plans and CPGS quote it in the catalog
-  frame. `--aberration` (or `pa_v3_drift(..., aberration=True)`) models this. It changes the catalog-frame PA_V3 by
+  physical attitude follows from the apparent target and Sun directions; the plans and CPGS quote it in the
+  barycentric coordinate frame. `--aberration` (or `pa_v3_drift(..., aberration=True)`) models this. It changes the
+  PA_V3 in the barycentric coordinate frame by
   about −8.3 min × dPA_V3/dt (0.003°–0.009°) plus ≤ 0.004° from the target term.
   * The CGI L1 header pointing keywords (`PA_V3`, `PA_APER`, `RA_APER`, …) are in the apparent frame. They differ
-    from the catalog frame by up to 20.6″ in position and 20.6″ × tan |Dec| in PA (0.0165° for 11 UMi).
+    from the barycentric coordinate frame by up to 20.6″ in position and 20.6″ × tan |Dec| in PA (0.0165° for 11 UMi).
 * **Attitude epoch.** The observation plan fixes PA_V3 for the planned attitude epoch (the start of the visit
   slew), and the attitude is held inertially fixed. If a visit executes at another time, its roll differs from
   nominal by the PA_V3 rate times the time difference: 0.025°–0.17° in commissioning visits executed 22 min late to
   4.4 h early. This is the same assumption as the roll-limit model above.
 * **Verification.** With the aperture offset, the Horizons position and velocity aberration, `roman_pointing`
   reproduces the STScI plans (OPUP "CGI Fixed v3pa@T"), the attitude telemetry (WFI metadata) and the CGI headers to
-  ≤ 0.004°, for CAR-55.1, 55.4, 101.1, 102.7, 193.1 and 193.2. See
-  [`docs/attitude_model/README.md`](../attitude_model/README.md), section 6, and `tools/compare_header_pa.py`.
+  ≤ 0.004°. See
+  [`docs/attitude_model/README.md`](../attitude_model/README.md), section 6, and `tools/compare_flight_metadata.py`.
 * **Target and attitude limits.** Stellar parallax and proper motion are negligible. The FOR is taken as 54° ≤ ε ≤ 126°
   for the Sun angle of V1. With `v_obs_G` (or `--aberration`), `calcRomanAngles` returns the physical (apparent)
   Sun angle, which differs from the geometric one by ≤ 20.6″. The full ±15° roll is assumed available everywhere in

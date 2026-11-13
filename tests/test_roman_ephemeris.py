@@ -146,7 +146,7 @@ def test_roman_velocity():
     ("CAR-193.1", (229.2745, 71.82388889), "2026-11-01T04:57:00", 193.115),
 ])
 def test_opup_planned_pa(name, radec, t_plan, v3pa_t):
-    # OPUP "CGI Fixed v3pa@T" (catalog frame) at the visit-slew start, reproduced by the full model:
+    # OPUP "CGI Fixed v3pa@T" (barycentric coordinate frame) at the visit-slew start, reproduced by the full model:
     # CGI aperture on the target, Horizons position, velocity aberration of target and Sun
     aperture = getSIAFAperture()
     d = pa_v3_drift(*radec, Time(t_plan, scale="utc"), np.array([-0.01, 0, 0.01]), aperture, "horizons", aberration=True)

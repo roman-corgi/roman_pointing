@@ -245,8 +245,8 @@ def pa_v3_drift(ra, dec, t_mid, dt, aperture="CGI_CEN", ephemeris="horizons", ab
         aberration (bool):
             If True, compute the physical attitude from the aberrated target and Sun
             directions (observatory velocity from the same ephemeris), and report
-            PA_V3 in the catalog frame, as the observation plans do. sun_ang is then
-            the apparent Sun angle.
+            PA_V3 in the barycentric coordinate frame, as the observation plans do.
+            sun_ang is then the apparent Sun angle.
 
     Returns:
         dict:

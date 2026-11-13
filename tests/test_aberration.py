@@ -61,7 +61,7 @@ def unit_vectors(target, ts):
 
 
 def pa_by_transport(B_C_I, v_obs_G, u_ref):
-    """Catalog-frame PA of b_3 at the reference point, by removing the aberration from two nearby points.
+    """Barycentric coordinate-frame PA of b_3 at the reference point, by removing the aberration from two nearby points.
 
     Args:
         B_C_I (numpy.ndarray):
@@ -142,7 +142,7 @@ def test_remove_aberration(aperture, velocity, radec):
     B_C_I = calcRomanAngles(target, TS, getL2Positions(TS), aperture=aperture, v_obs_G=velocity)[3]
     B_C_I_cat = removeAberration(B_C_I, velocity, aperture)
     rhat_target, _ = unit_vectors(target, TS)
-    # the catalog-frame attitude has the aperture on the catalog target
+    # the barycentric coordinate-frame attitude has the aperture on the catalog target
     assert np.max(np.linalg.norm(np.einsum("ijt,i->jt", B_C_I_cat, aperture["u_B"]) - rhat_target, axis=0)) < 1e-9
     # its PA agrees with removing the aberration from two nearby points
     pa_cat = getRomanPositionAngle(B_C_I_cat, aperture).to_value(u.deg)

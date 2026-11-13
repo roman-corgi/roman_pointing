@@ -18,8 +18,9 @@ Usage:
   python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
       --duration 1.5 --early 3 --late 3
   # By default the CGI aperture (CGI_CEN) is on the target, PA_V3 is measured there, and the observatory is on
-  # Roman's JPL Horizons trajectory. Add --aberration for the velocity aberration (PA_V3 in the catalog frame,
-  # as used by the observation plans), or use --aperture none --ephemeris L2 for the boresight V1 at L2:
+  # Roman's JPL Horizons trajectory. Add --aberration for the velocity aberration (PA_V3 in the barycentric
+  # coordinate frame, as used by the observation plans), or use --aperture none --ephemeris L2 for the boresight
+  # V1 at L2:
   python tools/plan_roll_limits.py --target "eps Eri" --start 2027-01-19T00:00:00 \\
       --duration 1.5 --early 3 --late 3 --aperture none --ephemeris L2
   # generic roll-limit figures, the README worked example, and the guideline table

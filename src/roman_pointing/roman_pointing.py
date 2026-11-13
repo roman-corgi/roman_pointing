@@ -313,7 +313,8 @@ def applyAberration(rhat, v_obs_G, inverse=False):
     Args:
         rhat (numpy.ndarray(float)):
             3xn array of unit vectors toward sources, in the frame of v_obs_G:
-            catalog (rest-frame) directions, or apparent directions if inverse is True
+            directions in the barycentric coordinate frame (rest frame), or apparent
+            directions if inverse is True
         v_obs_G (astropy.units.Quantity(numpy.ndarray(float))):
             Observatory barycentric velocity, 3xn (or 3) array
         inverse (bool):
@@ -337,7 +338,7 @@ def applyAberration(rhat, v_obs_G, inverse=False):
 
 
 def removeAberration(B_C_I, v_obs_G, aperture=None):
-    """Express a physical (apparent-frame) attitude in the aberration-free catalog frame
+    """Express a physical (apparent-frame) attitude in the barycentric coordinate frame
 
     Rotates each attitude by the smallest rotation that moves the apparent direction
     of the reference point (the aperture, or b_1) to its catalog direction. This is
@@ -355,7 +356,7 @@ def removeAberration(B_C_I, v_obs_G, aperture=None):
 
     Returns:
         numpy.ndarray(float):
-            3x3xn attitude matrices in the catalog frame
+            3x3xn attitude matrices in the barycentric coordinate frame
 
     """
     u_ref = np.array([1.0, 0.0, 0.0]) if aperture is None else aperture["u_B"]
@@ -425,7 +426,7 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None, aperture=None, v_obs_G=No
             from getRomanVelocities. If given, the target and Sun directions are
             aberrated, so B_C_I is the physical attitude in the apparent frame (the
             frame of the attitude quaternion) and sun_ang is the apparent Sun angle.
-            Use removeAberration to express B_C_I in the catalog frame.
+            Use removeAberration to express B_C_I in the barycentric coordinate frame.
 
     Returns:
         tuple:
