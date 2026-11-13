@@ -164,7 +164,20 @@ so PA_V3 = θ + η:
 $$ \frac{d\,\mathrm{PA_{V3}}}{dt} = -\dot\lambda_\odot\,\frac{\sin\beta}{\sin^2\varepsilon}. $$
 
 If the absolute PA is needed: with obliquity ι = 23.44°,
-η = −atan2(sin ι cos λ, cos β cos ι − sin β sin ι sin λ). This reproduces `getRomanPositionAngle` to < 0.005°.
+η = −atan2(sin ι cos λ, cos β cos ι − sin β sin ι sin λ). This reproduces `getRomanPositionAngle` to < 0.005° for its
+default (boresight) model: V1 on the target, observatory at L2, geometric Sun direction, barycentric coordinate frame.
+
+The PA_V3 that CPGS and the observation plans use differs from this model by three small corrections. Each changes
+the rate by ≲ 2%, so the rate formula holds, but they matter for the absolute PA (section 7):
+
+* **Aperture on the target.** PA_V3 is measured at the CGI aperture, 0.386° from V1:
+  ΔPA ≈ V2Ref/tan ε − V2Ref·V3Ref, at most 0.22° at the FOR edges.
+* **Roman's orbit.** The Sun direction from Roman differs from that from L2 by 0.06°–0.31°.
+* **Velocity aberration.** The Sun's apparent longitude lags λ☉ by 20.5″, which is the same as evaluating the formula
+  8.3 min earlier. The target's aberration adds ≤ 20.6″/tan ε.
+
+`pa_v3_drift` and `tools/plan_roll_limits.py` apply the first two by default, and the third with `aberration=True`
+(`--aberration`).
 
 ### Day-of-year form (circular orbit)
 
@@ -264,9 +277,11 @@ span for a conservative limit, and add ~3% in December–January. `tools/plan_ro
   planned mid-sequence at 2027-01-19 18:00 UTC.
 * The start may move up to 3 days early or late (U = 3 days, H = D/2 + U = 3.75 days). The RDI sequence can therefore start
   anywhere in the Jan 16–22 scheduling window (Jan 16 00:00 to Jan 22 00:00 UTC) and may end as late as Jan 23 12:00.
-* Over that span the Sun angle is 103.5°–110.2° and PA_V3 increases at ≈ 0.52°/day.
+* Over that span the Sun angle (of V1, with the CGI aperture on the target) is 103.0°–109.7° and PA_V3 increases at
+  ≈ 0.51°/day.
 
-**Allowed roll offsets.** The calculator evaluates the constraints with `roman_pointing` and the solar ephemeris:
+**Allowed roll offsets.** The calculator evaluates the constraints with `roman_pointing` and the solar ephemeris, with
+the CGI aperture on the target and Roman's Horizons orbit (its defaults):
 
 ```
 PYTHONPATH=src python tools/plan_roll_limits.py --target "eps Eri" \
@@ -276,9 +291,9 @@ PYTHONPATH=src python tools/plan_roll_limits.py --target "eps Eri" \
 ```
   Found 'eps Eri' in CORGIDB (StarAliases lookup).
 Target eps Eri: RA 53.2284 deg, Dec -9.4582 deg (ICRS, J2000)
-Target beta = -27.71 deg, Sun angle 103.5-110.2 deg, dPA_V3/dt at mid-sequence = +0.517 deg/day
-Allowed requested roll offsets (applyRollAngle sense): -13.02 to +13.10 deg; symmetric limit +/-13.02 deg
-Reachable fixed sky PA_V3 over the span: 232.15 to 258.27 deg; maximum-separation pair 232.15 and 258.27 deg (separation 26.12 deg)
+Target beta = -27.71 deg, Sun angle 103.0-109.7 deg, dPA_V3/dt at mid-sequence = +0.513 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -13.04 to +13.11 deg; symmetric limit +/-13.04 deg
+Reachable fixed sky PA_V3 over the span: 232.38 to 258.53 deg; maximum-separation pair 232.38 and 258.53 deg (separation 26.15 deg)
 ```
 
 The last line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy).
@@ -288,11 +303,11 @@ The last line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-
 * The plot shows the actual roll angle relative to the allowed ±15° envelope around the nominal attitude, evaluated at
   each time in the execution time window, for the two limiting requested rolls.
 * The lines slope upward because PA_V3 increases for β < 0.
-* The −13.02° roll specified to CPGS translates to −15° at the start of the span (earliest start), and the +13.10° roll
+* The −13.04° roll specified to CPGS translates to −15° at the start of the span (earliest start), and the +13.11° roll
   reaches +15° at its end (latest end). So the negative roll is limited by running early, and the positive roll by
   running late.
 * **One-sided shift.** If the start can only slip later (`--early 0 --late 3`), the negative roll is limited only by
-  the RDI sequence length, and the allowed range widens to −14.61° to +13.10°.
+  the RDI sequence length, and the allowed range widens to −14.61° to +13.11°.
 
 ![roll limits example](roll_limits_example.png)
 
@@ -340,7 +355,7 @@ conjunction) and |β|, for H = 2 and 4 days.
 ### Calculator for a specific target
 
 `tools/plan_roll_limits.py` computes the allowed offsets for one target and RDI sequence directly with `roman_pointing`,
-using the actual solar ephemeris:
+using the actual solar ephemeris, the CGI aperture on the target and Roman's Horizons orbit:
 
 ```
 PYTHONPATH=src python tools/plan_roll_limits.py --ra 108.949 --dec 67.783 \
@@ -348,13 +363,14 @@ PYTHONPATH=src python tools/plan_roll_limits.py --ra 108.949 --dec 67.783 \
 ```
 
 ```
-Target beta = 45.00 deg, Sun angle 107.5-112.8 deg, dPA_V3/dt at mid-sequence = -0.806 deg/day
-Allowed requested roll offsets (applyRollAngle sense): -11.83 to +11.72 deg; symmetric limit +/-11.72 deg
+Target beta = 45.00 deg, Sun angle 107.2-112.4 deg, dPA_V3/dt at mid-sequence = -0.801 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -11.85 to +11.74 deg; symmetric limit +/-11.74 deg
 ```
 
-With `--early 0 --late 3` (start can only slip later), the positive roll is limited only by the RDI sequence length: −11.83° to
-+14.19°. The calculator warns if any part of the span falls outside the field of regard. It agrees with the analytic
-limits to within 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
+With `--early 0 --late 3` (start can only slip later), the positive roll is limited only by the RDI sequence length: −11.85° to
++14.20°. The calculator warns if any part of the span falls outside the field of regard. With
+`--aperture none --ephemeris L2` it reproduces the analytic boresight limits; the aperture and Horizons corrections
+change the limits of these examples by ≤ 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
 same inputs; `-o` sets the output directory (default: current directory).
 
 Instead of `--ra/--dec`, `--target NAME` resolves the target by name with `get_target_coords` from
@@ -396,8 +412,8 @@ requested PAs and gives the roll each one needs over the span.
 * Centering the RDI sequence in the window allows a start shift of (8 − 5)/2 = 1.5 days, rounded up to 2 days early and late.
   The planned start is 2027-04-20 12:00 UTC and the planned mid-sequence 2027-04-23 00:00 UTC. The possible execution
   span is 9 days, Apr 18 12:00 to Apr 27 12:00.
-* Over that span the Sun angle is 121.7°–123.5°, near the anti-Sun edge of the FOR, so PA_V3 rotates quickly
-  (≈ 1.13°/day).
+* Over that span the Sun angle is 121.5°–123.3°, near the anti-Sun edge of the FOR, so PA_V3 rotates quickly
+  (≈ 1.14°/day).
 
 ```
 PYTHONPATH=src python tools/plan_roll_limits.py --target "HIP 71618" \
@@ -407,14 +423,14 @@ PYTHONPATH=src python tools/plan_roll_limits.py --target "HIP 71618" \
 ```
   'HIP 71618' not found in CORGIDB — querying SIMBAD...
 Target HIP 71618: RA 219.7093 deg, Dec +44.4045 deg (ICRS, J2000)
-Target beta = 55.44 deg, Sun angle 121.7-123.5 deg, dPA_V3/dt at mid-sequence = -1.133 deg/day
-Allowed requested roll offsets (applyRollAngle sense): -9.96 to +9.85 deg; symmetric limit +/-9.85 deg
-Reachable fixed sky PA_V3 over the span: 1.36 to 21.17 deg; maximum-separation pair 1.36 and 21.17 deg (separation 19.81 deg)
-PA1 = 5.00 deg: needed roll +1.17 to +11.36 deg over the span (reachable)
-PA2 = 20.00 deg: needed roll -13.83 to -3.64 deg over the span (reachable)
+Target beta = 55.44 deg, Sun angle 121.5-123.3 deg, dPA_V3/dt at mid-sequence = -1.137 deg/day
+Allowed requested roll offsets (applyRollAngle sense): -9.94 to +9.83 deg; symmetric limit +/-9.83 deg
+Reachable fixed sky PA_V3 over the span: 1.92 to 21.69 deg; maximum-separation pair 1.92 and 21.69 deg (separation 19.77 deg)
+PA1 = 5.00 deg: needed roll +1.69 to +11.92 deg over the span (reachable)
+PA2 = 20.00 deg: needed roll -13.31 to -3.08 deg over the span (reachable)
 ```
 
-Over the 9-day span PA_V3 swings by 10.2°, so the two PAs can be at most 19.8° apart: 1.36° and 21.17°. Any pair inside
+Over the 9-day span PA_V3 swings by 10.2°, so the two PAs can be at most 19.8° apart: 1.92° and 21.69°. Any pair inside
 that interval, such as 5° and 20°, is reachable throughout. Applying the needed rolls with `applyRollAngle` holds both
 limiting PAs with |roll| ≤ 15° over the whole span.
 
@@ -493,26 +509,44 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
 * **Fixed-PA model (section 5).** Both PAs alternate within one RDI sequence and are held exactly over its whole possible
   execution span, which must lie inside the FOR. The same roll-margin caveat applies.
 
-* **Observatory position.** It is taken at the Sun–Earth L2 point, as in `getL2Positions`. Roman's real halo orbit
-  probably displaces the Sun direction by a few tenths of a degree with a ~6-month period. That would change the rate by
-  ≲ 0.01°/day, which matters only in relative terms for very-low-|β| targets, whose rates are ~0.1°/day. This is an
-  order-of-magnitude estimate; it has not been checked against the JPL Horizons Roman orbit (`-211`), which
-  `calcRomanAngles` accepts as `r_obs_G` (see `Notebooks/roman_pointing_demo.ipynb`).
-* **EXCAM aperture offset.** `calcRomanAngles` points the boresight (V1) at the target, and all PAs here are measured
-  there. In practice the CGI aperture is placed on the target. The in-flight SIAF (`roman_siaf_inflight_20261013.xml`,
-  aperture `CGI_CEN`) puts it at (V2, V3) = (−1103.7″, −841.3″), δ = 0.386° from V1. CPGS evaluates PAs with the
-  current SIAF through the STScI backend, so its values include this offset. Upper bounds on the effect:
-  * Absolute PA: north at the aperture is rotated from north at V1 by ≈ δ sin φ tan(Dec), where φ is the PA of
-    the aperture offset from V1 and Dec is the target declination. The bound δ |tan(Dec)| is 0.07° at |Dec| = 10°,
-    0.39° at 45°, 0.67° at 60°, and 2.2° at 80°. For the examples it is 0.06° (ε Eri) and 0.38° (HIP 71618). This
-    shifts the PA_V3 and PA_APER values in sections 4 and 5, including the reachable fixed-PA interval, by the same
-    amount at both ends.
-  * Rate and PA drift: the fractional change is ≲ δ |tan(Dec)| (δ in radians), i.e., ≲ 0.7% at |Dec| = 45° and
-    ≲ 1.2% at 60°. Over a ±30° drift this is ≲ 0.2° at 45°, so the roll-offset limits and the maximum fixed-PA
-    separation are essentially unchanged.
-  * Field of regard: the target's Sun angle differs from the boresight's by ≤ δ, which moves the FOR edges by
-    ≤ 0.4 day.
-* **Target and attitude limits.** Stellar parallax and proper motion are negligible. The FOR is taken as 54° ≤ ε ≤ 126°.
-  The full ±15° roll is assumed available everywhere in the FOR.
+* **Observatory position.** The analytic model and the default of `calcRomanAngles` callers is the Sun–Earth L2 point
+  (`getL2Positions`). `pa_v3_drift` and `plan_roll_limits.py` use Roman's actual orbit by default (JPL Horizons,
+  `-211`, via `getRomanPositions`; `--ephemeris L2` for the L2 point). The orbit is 290,000–840,000 km from L2, which
+  moves the Sun direction by 0.06°–0.31°. For 400 random targets in the FOR this changes:
+  * the Sun angle by up to 0.30° (rms 0.15°), which moves the FOR edges by up to ~0.3 day;
+  * the nominal PA_V3 by up to 0.33° (rms 0.16°);
+  * the PA_V3 rate by ≲ 0.012°/day (≲ 2%), which changes the roll-offset limits by ≲ 0.1° over a 9-day span.
+* **EXCAM aperture offset.** CPGS places the CGI aperture, not V1, on the target, and quotes PA_V3 there. In the
+  in-flight SIAF (`roman_siaf_inflight_20261021.xml`, aperture `CGI_CEN`) the aperture is at (V2, V3) =
+  (−1104.2″, −840.9″), δ = 0.386° from V1. `pa_v3_drift` and `plan_roll_limits.py` model this by default (`--aperture none` for V1); the analytic
+  boresight model omits it.
+  * Absolute PA: PA_V3 at the aperture differs from the boresight model by ΔPA ≈ V2Ref/tan ε − V2Ref·V3Ref
+    (V2Ref and V3Ref in radians; the second term is −0.00125°). This is 0 at ε = 90° and at most 0.22° at the
+    FOR edges: +0.06° to +0.09° for ε Eri (Jan 19–25, 2027) and +0.20° for HIP 71618. The calculator outputs in
+    sections 4 and 5 include it; relative to the boresight model it shifts both ends of the reachable fixed-PA
+    interval by the same amount. The larger
+    meridian-convergence term, ≈ δ sin φ tan(Dec), applies only to PA_V3 quoted at V1, which CPGS does not use.
+  * Rate and PA drift: the rate changes by ≤ |V2Ref| λ̇☉/sin²ε ≈ 0.008°/day, ≤ 0.07° over a 9-day span.
+  * Field of regard: the Sun-angle limits apply to V1, which is displaced toward the Sun by V3Ref = −0.234°. The
+    target's FOR is therefore 54.23° ≤ ε ≤ 126.23°, which moves the window edges by ≈ 0.24 day near the ecliptic.
+* **Velocity aberration.** Roman moves at about 30 km/s, which displaces apparent directions by up to 20.6″. The
+  physical attitude follows from the apparent target and Sun directions; the plans and CPGS quote it in the
+  barycentric coordinate frame. `--aberration` (or `pa_v3_drift(..., aberration=True)`) models this. It changes the
+  PA_V3 in the barycentric coordinate frame by
+  about −8.3 min × dPA_V3/dt (0.003°–0.009°) plus ≤ 0.004° from the target term.
+  * The CGI L1 header pointing keywords (`PA_V3`, `PA_APER`, `RA_APER`, …) are in the apparent frame. They differ
+    from the barycentric coordinate frame by up to 20.6″ in position and 20.6″ × tan |Dec| in PA (0.0165° for 11 UMi).
+* **Attitude epoch.** The observation plan fixes PA_V3 for the planned attitude epoch (the start of the visit
+  slew), and the attitude is held inertially fixed. If a visit executes at another time, its roll differs from
+  nominal by the PA_V3 rate times the time difference: 0.025°–0.17° in commissioning visits executed 22 min late to
+  4.4 h early. This is the same assumption as the roll-limit model above.
+* **Verification.** With the aperture offset, the Horizons position and velocity aberration, `roman_pointing`
+  reproduces the STScI plans (OPUP "CGI Fixed v3pa@T"), the attitude telemetry (WFI metadata) and the CGI headers to
+  ≤ 0.004°. See
+  [`docs/attitude_model/README.md`](../attitude_model/README.md), section 6, and `tools/compare_flight_metadata.py`.
+* **Target and attitude limits.** Stellar parallax and proper motion are negligible. The FOR is taken as 54° ≤ ε ≤ 126°
+  for the Sun angle of V1. With `v_obs_G` (or `--aberration`), `calcRomanAngles` returns the physical (apparent)
+  Sun angle, which differs from the geometric one by ≤ 20.6″. The full ±15° roll is assumed available everywhere in
+  the FOR.
 * **Latitude frame.** β is the barycentric mean-ecliptic (J2000) latitude. In astropy, for a `SkyCoord` named `coord`,
   use `coord.transform_to(BarycentricMeanEcliptic).lat`.

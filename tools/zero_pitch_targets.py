@@ -1,6 +1,9 @@
 """
 Command line tool to find objects with zero pitch at a given time
 
+Pitch refers to the boresight V1, with the CGI aperture (CGI_CEN) on the target and Roman's
+JPL Horizons orbit by default (--aperture none and --ephemeris L2 for the boresight at L2).
+
 Usage:
   python zero_pitch_targets.py -t 2026-11-17T00:00:00.0 -b 2.0
 
@@ -11,9 +14,11 @@ import argparse
 from roman_pointing.roman_pointing import (
     calcRomanAngles,
     getL2Positions,
+    getRomanPositions,
+    getSIAFAperture,
     getSunPositions,
 )
-from astropy.table import Column
+from astropy.table import Column, unique
 from astropy.time import Time
 from astroquery.simbad import Simbad
 import numpy as np
@@ -27,7 +32,7 @@ from astropy.coordinates import (
     BarycentricMeanEcliptic,
 )
 
-def get_zero_pitch_azel_from_yaw(ts, yaw):
+def get_zero_pitch_azel_from_yaw(ts, yaw, r_obs_G, aperture=None):
     """
     Return the azimuth + elevation for a given time and yaw at zero pitch
 
@@ -36,14 +41,17 @@ def get_zero_pitch_azel_from_yaw(ts, yaw):
             Observation time to evaluate at
         yaw (numpy.ndarray(float)):
             Yaw value to use, can be an array of values
+        r_obs_G (astropy.units.Quantity):
+            Observatory barycentric position at ts (BarycentricMeanEcliptic)
+        aperture (dict or None):
+            Aperture from getSIAFAperture(): return the direction of the aperture,
+            rather than of V1, for each zero-pitch attitude
 
     Returns:
         tuple:
             az, el (both numpy.ndarray(float) of the same size as yaw)
 
     """
-    # assume observatory is at exactly L2
-    r_obs_G = getL2Positions(ts)
 
     # get sun position and unit vector wrt observatory
     r_sun_G = getSunPositions(ts)
@@ -77,9 +85,9 @@ def get_zero_pitch_azel_from_yaw(ts, yaw):
     assert np.max(np.abs(np.array(B_C_I[2], ndmin=2).T - rhat_sun_obs)) \
         < np.spacing(2 * np.pi)
 
-    # we're interested in the full range of yaws - for now, brute force this
-    yaw = np.linspace(0, 2 * np.pi, 100)
-    rhat_targ_obs = np.vstack([np.matmul(rotMat(3, a), B_C_I)[0] for a in yaw])
+    # direction of V1 (or the aperture) for each yaw at zero pitch
+    u_B = np.array([1, 0, 0]) if aperture is None else aperture["u_B"]
+    rhat_targ_obs = np.vstack([np.matmul(rotMat(3, a), B_C_I).T @ u_B for a in yaw])
 
     # decompose to spherical coords as if this was barycentric
     az = np.atan2(rhat_targ_obs[:, 1], rhat_targ_obs[:, 0])
@@ -99,6 +107,10 @@ if __name__ == "__main__":
     ap.add_argument('-o', '--output', default=None, help="File to write output to.  If not supplied, prints only to stdout")
     ap.add_argument('--vmag', type=float, default=5.0, help="Lower bound on V-magnitude, defaults to 5.0 if not supplied")
     ap.add_argument('--quiet', action="store_true", help="If this flag is present, does not print to stdout")
+    ap.add_argument('--aperture', default="CGI_CEN",
+                    help="SIAF aperture placed on the target, or 'none' for the boresight V1 (default CGI_CEN)")
+    ap.add_argument('--ephemeris', choices=["horizons", "L2"], default="horizons",
+                    help="Observatory position: JPL Horizons orbit of Roman (default) or the L2 point")
     args = ap.parse_args()
 
     if "T" in args.time:
@@ -107,6 +119,8 @@ if __name__ == "__main__":
         f = "iso"
     t0 = Time([args.time], format=f, scale="utc")
     bound = args.bound*u.deg
+    aperture = None if args.aperture.lower() == "none" else getSIAFAperture(args.aperture)
+    r_obs_G = getRomanPositions(t0) if args.ephemeris == "horizons" else getL2Positions(t0)
 
     # Use the tolerance bound to select the yaw sampling + search radius.
     # Since we need to make a band and only have circles, we'll oversize the
@@ -117,7 +131,7 @@ if __name__ == "__main__":
     npts = np.ceil((2*np.pi*u.rad)/radius) # round up so we don't lose pts at the end
     yaw = np.arange(npts)*radius
 
-    az, el = get_zero_pitch_azel_from_yaw(t0, yaw)
+    az, el = get_zero_pitch_azel_from_yaw(t0, yaw, r_obs_G, aperture)
 
     Simbad.add_votable_fields(
         "ra",
@@ -140,6 +154,8 @@ if __name__ == "__main__":
         radius=radius,
         criteria=f"flux.filter = 'V' AND flux < {float(args.vmag)}",
     )
+    # the search circles overlap, so stars near the overlaps are returned more than once
+    goodres = unique(goodres, keys="main_id")
     nrows = len(goodres)
     goodres.add_column(Column(name='pitch', data=[None]*nrows, unit=u.deg))
     goodres.add_column(Column(name='yaw', data=[None]*nrows, unit=u.deg))
@@ -161,11 +177,7 @@ if __name__ == "__main__":
             obstime="J2000",
         ).transform_to(BarycentricMeanEcliptic)
 
-        _, yaw, pitch, _ = calcRomanAngles(
-            target,
-            t0,
-            getL2Positions(t0)
-        )
+        _, yaw, pitch, _ = calcRomanAngles(target, t0, r_obs_G, aperture=aperture)
         goodres[index]["pitch"] = pitch.to_value(u.deg)[0]
         goodres[index]["yaw"] = yaw.to_value(u.deg)[0]
         if np.abs(pitch) > bound or np.isnan(pitch) or np.isnan(yaw):
