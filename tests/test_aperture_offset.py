@@ -10,7 +10,14 @@ from angutils.angutils import rotMat
 from astropy.coordinates import BarycentricMeanEcliptic, SkyCoord
 from astropy.time import Time
 
-from roman_pointing.field_rotation import SUN_ANG_MAX, SUN_ANG_MIN, pa_v3_drift
+from roman_pointing.field_rotation import (
+    ROLL_MAX,
+    ROLL_MAX_INSTRUMENT,
+    ROLL_MAX_OBSERVATORY,
+    SUN_ANG_MAX,
+    SUN_ANG_MIN,
+    pa_v3_drift,
+)
 from roman_pointing.roman_pointing import (
     SIAF_FILE,
     applyRollAngle,
@@ -18,6 +25,7 @@ from roman_pointing.roman_pointing import (
     getEXCAMPositionAngle,
     getL2Positions,
     getRomanPositionAngle,
+    getRomanRollAngle,
     getSIAFAperture,
     getSunPositions,
 )
@@ -212,6 +220,60 @@ def test_pa_v3_drift_aperture(aperture):
     with pytest.raises(ValueError):
         pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5), ephemeris="SOC")
 
+
+def test_roll_angle_about_v1(aperture, for_targets):
+    for target in for_targets:
+        sun_ang, _, _, B_C_I = calcRomanAngles(target, TS, getL2Positions(TS), aperture=aperture)
+        _, rhat_sun = unit_vectors(target, TS)
+        # nominal attitude: no roll about V1
+        np.testing.assert_allclose(getRomanRollAngle(B_C_I, rhat_sun).to_value(u.deg), 0, rtol=0, atol=1e-9)
+        # a roll about V1 gives exactly that roll angle, in the applyRollAngle sign convention
+        B_C_I_v1 = applyRollAngle(B_C_I, [12, -7] * u.deg)
+        np.testing.assert_allclose(getRomanRollAngle(B_C_I_v1, rhat_sun).to_value(u.deg), [12, -7], rtol=0,
+                                   atol=1e-9)
+        # a 15 deg roll about the aperture is within 0.05 deg of 15 deg about V1: more for eps < 90 deg, less above
+        roll_v1 = getRomanRollAngle(applyRollAngle(B_C_I, [15, -15] * u.deg, aperture), rhat_sun).to_value(u.deg)
+        eps = sun_ang.to_value(u.deg)[0]
+        assert np.all(np.abs(np.abs(roll_v1) - 15) < 0.05)
+        if abs(eps - 90) > 2:
+            assert np.all(np.sign(np.abs(roll_v1) - 15) == np.sign(90 - eps))
+        # the aperture roll that gives +/-15 deg about V1, by the iteration of plan_roll_limits.py
+        for sign in (1, -1):
+            a = np.full(TS.size, sign * 15.0)
+            for _ in range(3):
+                a += sign * 15 - getRomanRollAngle(applyRollAngle(B_C_I, a * u.deg, aperture), rhat_sun).to_value(u.deg)
+            roll_v1 = getRomanRollAngle(applyRollAngle(B_C_I, a * u.deg, aperture), rhat_sun).to_value(u.deg)
+            np.testing.assert_allclose(roll_v1, sign * 15, rtol=0, atol=1e-8)  # error 0.05 deg / 300**3
+    # pa_v3_drift returns the nominal attitude and the Sun direction it was solved with (physical and apparent with
+    # aberration), so their roll about V1 is 0
+    for aberration in (False, True):
+        drift = pa_v3_drift(53.2327, -9.4583, Time("2027-01-20T12:00:00"), np.linspace(-1, 1, 5), aperture, "L2",
+                            aberration)
+        np.testing.assert_allclose(getRomanRollAngle(drift["B_C_I"], drift["rhat_sun"]).to_value(u.deg), 0, rtol=0,
+                                   atol=1e-9)
+
+def test_compound_roll_limit(aperture, for_targets):
+    # the boresight model uses the stricter of the two limits, which apply to the same axis when V1 is on the target
+    assert ROLL_MAX == min(ROLL_MAX_OBSERVATORY, ROLL_MAX_INSTRUMENT)
+    for target in for_targets:
+        sun_ang, _, _, B_C_I = calcRomanAngles(target, TS, getL2Positions(TS), aperture=aperture)
+        _, rhat_sun = unit_vectors(target, TS)
+        eps = sun_ang.to_value(u.deg)
+        for sign in (1, -1):
+            # aperture roll for the observatory limit about V1, then the stricter limit as in plan_roll_limits.py
+            a = np.full(TS.size, sign * ROLL_MAX_OBSERVATORY)
+            for _ in range(3):
+                a += sign * ROLL_MAX_OBSERVATORY - getRomanRollAngle(applyRollAngle(B_C_I, a * u.deg, aperture),
+                                                                     rhat_sun).to_value(u.deg)
+            limit = sign * np.minimum(sign * a, ROLL_MAX_INSTRUMENT)
+            roll_v1 = getRomanRollAngle(applyRollAngle(B_C_I, limit * u.deg, aperture), rhat_sun).to_value(u.deg)
+            # both limits hold, and one of them is reached
+            assert np.all(np.abs(limit) <= ROLL_MAX_INSTRUMENT + 1e-12)
+            assert np.all(np.abs(roll_v1) <= ROLL_MAX_OBSERVATORY + 1e-8)
+            # sunward of quadrature the observatory limit about V1 is the stricter one, beyond it the aperture limit
+            sunward, antisunward = eps < 88, eps > 92
+            np.testing.assert_allclose(roll_v1[sunward], sign * ROLL_MAX_OBSERVATORY, rtol=0, atol=1e-8)
+            np.testing.assert_allclose(limit[antisunward], sign * ROLL_MAX_INSTRUMENT, rtol=0, atol=1e-12)
 
 def test_pysiaf_conventions(aperture, for_targets):
     pysiaf = pytest.importorskip("pysiaf")

@@ -622,6 +622,37 @@ def getRomanPositionAngle(B_C_I, aperture=None):
     return np.array(PA_Z) * u.rad
 
 
+def getRomanRollAngle(B_C_I, rhat_sun):
+    """Return the roll angle about V1 relative to the nominal attitude
+
+    The roll is the angle, counter-clockwise about b_1, from the Sun direction projected
+    onto the plane perpendicular to b_1 to the b_3 axis. It is 0 at the nominal attitude
+    (Sun in the V1-V3 plane, on the +V3 side), and equals r after a roll of r about V1
+    with applyRollAngle. The observatory's off-nominal roll limit applies to this angle.
+
+    Args:
+        B_C_I (numpy.ndarray(float)):
+            Matrix of spacecraft body-centered unit vectors in the inertial reference
+            frame. Should have dimension 3x3xn where n is the number of time steps.
+            Use the physical attitude (calcRomanAngles with v_obs_G) if the Sun
+            direction is apparent.
+        rhat_sun (numpy.ndarray(float)):
+            3xn unit vectors from the observatory to the Sun, in the frame of B_C_I
+
+    Returns:
+        astropy.units.Quantity(numpy.ndarray(float)):
+            Roll angle about V1 at each time.
+
+    """
+    roll = []
+    for t in range(B_C_I.shape[2]):
+        b_1 = B_C_I[0, :, t]
+        sun_proj = projplane(rhat_sun[:, t].reshape(3, 1), b_1)
+        roll.append(calcang(sun_proj, B_C_I[2, :, t], b_1))
+
+    return np.array(roll) * u.rad
+
+
 def getEXCAMPositionAngle(B_C_I, aperture=None):
     """Return the EXCAM position angle on sky
 

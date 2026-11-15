@@ -242,6 +242,28 @@ The roll offsets must stay within ±15° of the nominal roll over the full time 
 Long RDI sequences, rolls requested near ±15°, and fast-rotating targets push A(t) past the limit. The RDI sequence then has only a
 narrow range of legal start times.
 
+**Roll limits.** With the CGI aperture on the target, roll offsets are rotations about the aperture, which keep the
+target on it and change the PA_V3 there by exactly the roll. Two limits are applied to them:
+
+* **Observatory limit:** ±15° about V1 (`ROLL_MAX_OBSERVATORY`), i.e. the rotation of the Sun about V1, away from the
+  V1–V3 plane (`roman_pointing.getRomanRollAngle`).
+* **Conservative limit:** ±15° about the instrument aperture itself (`ROLL_MAX_INSTRUMENT`).
+
+The two differ slightly:
+
+* A 15° roll about the aperture is a roll of 15.03°–15.05° about V1 at Sun angles ε = 56°–60°, exactly 15° at
+  ε = 90°, and 14.95°–14.97° at ε = 120°–124°. The observatory limit is therefore the stricter one for targets
+  sunward of quadrature (ε < 90°), and the conservative limit beyond it.
+* Rolling about the aperture also moves V1 around it, which changes the Sun angle of V1 by up to 0.09°.
+
+The formulas and tables in sections 4 and 5 are boresight (V1-on-target) models, in which both limits apply to the
+same axis (`ROLL_MAX`, the smaller of the two). `tools/plan_roll_limits.py` applies both limits exactly. At each time
+it finds the aperture rolls that give ±15° about V1, uses the stricter of these and ±15° about the aperture, and
+reports which limit sets each end of the allowed range, together with the Sun angle of V1 for the limiting rolls. The
+examples below are all beyond quadrature, so the conservative limit sets their ranges. For ε Eri with the start
+planned for 2027-08-10 instead (Sun angle 86.2°–92.6° over the span), the observatory limit sets the negative end and
+the conservative limit the positive end.
+
 ### Guideline formula
 
 Let H = D/2 + U be the farthest the RDI sequence can execute from the planned mid-sequence. To first order:
@@ -293,15 +315,18 @@ PYTHONPATH=src python tools/plan_roll_limits.py --target "eps Eri" \
 Target eps Eri: RA 53.2284 deg, Dec -9.4582 deg (ICRS, J2000)
 Target beta = -27.71 deg, Sun angle 103.0-109.7 deg, dPA_V3/dt at mid-sequence = +0.513 deg/day
 Allowed requested roll offsets (applyRollAngle sense): -13.04 to +13.11 deg; symmetric limit +/-13.04 deg
+Roll limits: +/-15 deg about V1 (observatory) and +/-15 deg about the aperture (conservative); stricter one at the negative end: instrument aperture, at the positive end: instrument aperture
 Reachable fixed sky PA_V3 over the span: 232.38 to 258.53 deg; maximum-separation pair 232.38 and 258.53 deg (separation 26.15 deg)
+Sun angle of V1 at the limiting requested rolls: 102.95-109.78 deg (rolling about the aperture moves V1)
 ```
 
-The last line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy).
+The "Reachable fixed sky PA_V3" line is the fixed-PA result of [section 5](#5-fixed-pa-observations-eg-slit-spectroscopy).
 
 **Reading the plot** ([roll_limits_example.png](roll_limits_example.png)):
 
-* The plot shows the actual roll angle relative to the allowed ±15° envelope around the nominal attitude, evaluated at
-  each time in the execution time window, for the two limiting requested rolls.
+* The plot shows the actual roll relative to the allowed ±15° envelope around the nominal attitude, evaluated at
+  each time in the execution time window, for the two limiting requested rolls: about V1 (solid) and about the
+  aperture (dashed). The two differ by ≤ 0.05°, so the curves overlap at this scale.
 * The lines slope upward because PA_V3 increases for β < 0.
 * The −13.04° roll specified to CPGS translates to −15° at the start of the span (earliest start), and the +13.11° roll
   reaches +15° at its end (latest end). So the negative roll is limited by running early, and the positive roll by
@@ -365,12 +390,15 @@ PYTHONPATH=src python tools/plan_roll_limits.py --ra 108.949 --dec 67.783 \
 ```
 Target beta = 45.00 deg, Sun angle 107.2-112.4 deg, dPA_V3/dt at mid-sequence = -0.801 deg/day
 Allowed requested roll offsets (applyRollAngle sense): -11.85 to +11.74 deg; symmetric limit +/-11.74 deg
+Roll limits: +/-15 deg about V1 (observatory) and +/-15 deg about the aperture (conservative); stricter one at the negative end: instrument aperture, at the positive end: instrument aperture
+Reachable fixed sky PA_V3 over the span: 290.49 to 314.08 deg; maximum-separation pair 290.49 and 314.08 deg (separation 23.59 deg)
+Sun angle of V1 at the limiting requested rolls: 107.18-112.50 deg (rolling about the aperture moves V1)
 ```
 
 With `--early 0 --late 3` (start can only slip later), the positive roll is limited only by the RDI sequence length: −11.85° to
-+14.20°. The calculator warns if any part of the span falls outside the field of regard. With
-`--aperture none --ephemeris L2` it reproduces the analytic boresight limits; the aperture and Horizons corrections
-change the limits of these examples by ≤ 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
++14.20°. The calculator warns if any part of the span falls outside the field of regard, at nominal roll or at the
+limiting rolls. With `--aperture none --ephemeris L2` it reproduces the analytic boresight limits; the aperture
+offset, the Horizons orbit and the two roll limits change the limits of these examples by ≤ 0.03°. Add `--plot` (and optionally `--name`) to write a figure like the worked example for the
 same inputs; `-o` sets the output directory (default: current directory).
 
 Instead of `--ra/--dec`, `--target NAME` resolves the target by name with `get_target_coords` from
@@ -397,7 +425,8 @@ Both $P_1$ and $P_2$ must lie in this interval. Its two ends are the pair of PAs
 $$ \big|P_2 - P_1\big|_\mathrm{max} = 2\times 15^\circ - \Delta\mathrm{PA}(T), $$
 
 where ΔPA(T) ≈ |rate| × T is the nominal PA swing over the span. If ΔPA(T) > 30°, no single fixed PA is reachable for
-the whole span. This is the result of section 4 in absolute terms: the interval ends are $P_{\mathrm{nom}}(t_\mathrm{mid}) - A_{\mathrm{max}}$ and $P_{\mathrm{nom}}(t_\mathrm{mid}) - A_{\mathrm{min}}$, where $A_{\mathrm{max}}$ and $A_{\mathrm{min}}$ are the allowed roll offsets.
+the whole span. With the CGI aperture on the target, the two roll limits of section 4 change these bounds by
+≤ 0.05°. This is the result of section 4 in absolute terms: the interval ends are $P_{\mathrm{nom}}(t_\mathrm{mid}) - A_{\mathrm{max}}$ and $P_{\mathrm{nom}}(t_\mathrm{mid}) - A_{\mathrm{min}}$, where $A_{\mathrm{max}}$ and $A_{\mathrm{min}}$ are the allowed roll offsets.
 
 ### Calculator for a specific target
 
@@ -425,14 +454,16 @@ PYTHONPATH=src python tools/plan_roll_limits.py --target "HIP 71618" \
 Target HIP 71618: RA 219.7093 deg, Dec +44.4045 deg (ICRS, J2000)
 Target beta = 55.44 deg, Sun angle 121.5-123.3 deg, dPA_V3/dt at mid-sequence = -1.137 deg/day
 Allowed requested roll offsets (applyRollAngle sense): -9.94 to +9.83 deg; symmetric limit +/-9.83 deg
+Roll limits: +/-15 deg about V1 (observatory) and +/-15 deg about the aperture (conservative); stricter one at the negative end: instrument aperture, at the positive end: instrument aperture
 Reachable fixed sky PA_V3 over the span: 1.92 to 21.69 deg; maximum-separation pair 1.92 and 21.69 deg (separation 19.77 deg)
-PA1 = 5.00 deg: needed roll +1.69 to +11.92 deg over the span (reachable)
-PA2 = 20.00 deg: needed roll -13.31 to -3.08 deg over the span (reachable)
+PA1 = 5.00 deg: needed roll (about the aperture) +1.69 to +11.92 deg over the span (reachable)
+PA2 = 20.00 deg: needed roll (about the aperture) -13.31 to -3.08 deg over the span (reachable)
+Sun angle of V1 at the limiting requested rolls: 121.47-123.28 deg (rolling about the aperture moves V1)
 ```
 
 Over the 9-day span PA_V3 swings by 10.2°, so the two PAs can be at most 19.8° apart: 1.92° and 21.69°. Any pair inside
 that interval, such as 5° and 20°, is reachable throughout. Applying the needed rolls with `applyRollAngle` holds both
-limiting PAs with |roll| ≤ 15° over the whole span.
+limiting PAs within both roll limits (±15° about the aperture and about V1) over the whole span.
 
 ### Guideline tables
 
@@ -546,7 +577,7 @@ synthetic targets with β from −80° to +85° at various longitudes, sampled e
   [`docs/attitude_model/README.md`](../attitude_model/README.md), section 6, and `tools/compare_flight_metadata.py`.
 * **Target and attitude limits.** Stellar parallax and proper motion are negligible. The FOR is taken as 54° ≤ ε ≤ 126°
   for the Sun angle of V1. With `v_obs_G` (or `--aberration`), `calcRomanAngles` returns the physical (apparent)
-  Sun angle, which differs from the geometric one by ≤ 20.6″. The full ±15° roll is assumed available everywhere in
-  the FOR.
+  Sun angle, which differs from the geometric one by ≤ 20.6″. The full ±15° roll (about V1 and about the aperture) is
+  assumed available everywhere in the FOR.
 * **Latitude frame.** β is the barycentric mean-ecliptic (J2000) latitude. In astropy, for a `SkyCoord` named `coord`,
   use `coord.transform_to(BarycentricMeanEcliptic).lat`.

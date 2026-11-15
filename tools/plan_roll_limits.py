@@ -4,8 +4,11 @@ observations on a given target) when the sky PA is held fixed.
 
 A requested roll offset A_nom becomes an absolute sky PA, P = PA_nom(t_mid) - A_nom (roll offsets follow
 roman_pointing.applyRollAngle: a roll of +r changes PA_V3 by -r). Executing at time t then needs a roll offset
-A(t) = A_nom + [PA_nom(t) - PA_nom(t_mid)], which must stay within ±ROLL_MAX from the earliest possible RDI
-sequence start to the latest possible end. Equivalently, an exact sky PA P is reachable over that span only if
+A(t) = A_nom + [PA_nom(t) - PA_nom(t_mid)] from the earliest possible RDI sequence start to the latest possible
+end. With an aperture on the target, the roll is about the aperture. Two limits apply: the observatory limit
+of ±ROLL_MAX_OBSERVATORY on the resulting roll about V1, which differs from A(t) by <= 0.05 deg, and a conservative
+limit of ±ROLL_MAX_INSTRUMENT on the roll about the aperture itself; roll_limits_for_target uses the stricter of the
+two at each time. Equivalently, an exact sky PA P is reachable over that span only if, approximately,
 max PA_nom - ROLL_MAX <= P <= min PA_nom + ROLL_MAX; the two ends are the pair of fixed PAs with the maximum
 separation. The rate model is in roman_pointing.field_rotation.
 
@@ -41,6 +44,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from field_rotation_rate import AXIS, BLUE_RAMP, INK, INK2, KEEPOUT, SERIES, SURFACE  # chart style
 from roman_pointing.field_rotation import (
     ROLL_MAX,
+    ROLL_MAX_INSTRUMENT,
+    ROLL_MAX_OBSERVATORY,
     SUN_ANG_MAX,
     SUN_ANG_MIN,
     SUN_RATE,
@@ -48,7 +53,7 @@ from roman_pointing.field_rotation import (
     pa_v3_drift,
 )
 from roman_pointing.roman_observability import get_target_coords
-from roman_pointing.roman_pointing import getSIAFAperture
+from roman_pointing.roman_pointing import applyRollAngle, getRomanRollAngle, getSIAFAperture
 
 # README worked example: epsilon Eridani, January 2027
 EXAMPLE = {"target": "eps Eri", "start": "2027-01-19T00:00:00", "duration": 1.5, "early": 3.0, "late": 3.0,
@@ -134,10 +139,20 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, apertu
                            aberration=False):
     """Allowed requested roll offsets and reachable fixed sky PA_V3 for a specific target and RDI sequence.
 
-    Uses roman_pointing with the solar ephemeris. A fixed sky PA P needs a roll PA_nom(t) - P at time t, so it is
-    reachable over the span for pa_lo <= P <= pa_hi, with pa_lo = PA_nom(t_mid) - a_max and
-    pa_hi = PA_nom(t_mid) - a_min. pa_lo and pa_hi are the pair of fixed PAs with the maximum separation,
-    a_max - a_min = 2 ROLL_MAX - (PA swing over the span); there is none if that is negative.
+    Uses roman_pointing with the solar ephemeris. Roll offsets are rotations about the aperture (V1 if aperture is
+    None), which keep the target on it and change the PA_V3 there by exactly the roll. A fixed sky PA P therefore
+    needs a roll A(t) = PA_nom(t) - P at time t. Two roll limits apply at each time, and the stricter one is used:
+
+    * the observatory limit, +/-ROLL_MAX_OBSERVATORY on the roll about V1 (getRomanRollAngle); the aperture rolls
+      that give these V1 rolls are found by iteration, and differ from ROLL_MAX_OBSERVATORY by <= 0.05 deg;
+    * a conservative limit, +/-ROLL_MAX_INSTRUMENT on the roll about the aperture itself.
+
+    For targets sunward of quadrature (Sun angle < 90 deg) the observatory limit is the stricter one, and beyond
+    quadrature the conservative aperture limit. P is reachable over the span for pa_lo <= P <= pa_hi, with
+    pa_lo = PA_nom(t_mid) - a_max and pa_hi = PA_nom(t_mid) - a_min. pa_lo and pa_hi are the pair of fixed PAs with
+    the maximum separation, a_max - a_min ~ 2 ROLL_MAX - (PA swing over the span); there is none if that is
+    negative. Rolling about the aperture also moves V1, so the Sun angle of V1 is reported for the held attitudes
+    of the two limiting requested rolls as well as for the nominal attitude.
 
     Args:
         ra (float):
@@ -162,16 +177,44 @@ def roll_limits_for_target(ra, dec, start, duration, early=0.0, late=0.0, apertu
     Returns:
         dict:
             a_min, a_max (deg, applyRollAngle sense); pa_mid, pa_lo, pa_hi (deg, sky PA_V3 in [0, 360));
-            separation (deg); beta (deg); Sun angle range (deg); PA_V3 rate at mid-sequence (deg/day)
+            separation (deg); beta (deg); sun_ang, the Sun angle range of V1 at nominal roll, and sun_ang_held,
+            its range for the held attitudes of a_min and a_max (deg); s_range, the range of
+            PA_nom(t) - PA_nom(t_mid) over the span (deg); binding, the limit that sets a_min and a_max
+            ('observatory (V1)' or 'instrument aperture'); PA_V3 rate at mid-sequence (deg/day)
     """
+    if isinstance(aperture, str):
+        aperture = getSIAFAperture(aperture)
     t_mid = Time(start, scale="utc") + duration / 2 * u.day
     dt = np.linspace(-(duration / 2 + early), duration / 2 + late, 241)
     drift = pa_v3_drift(ra, dec, t_mid, dt, aperture, ephemeris, aberration)
-    s, pa_mid = drift["s"], drift["pa_mid"]
-    a_min, a_max = -ROLL_MAX - s.min(), ROLL_MAX - s.max()
+    s, pa_mid, B_C_I, rhat_sun = drift["s"], drift["pa_mid"], drift["B_C_I"], drift["rhat_sun"]
+
+    roll_limit, binding = {}, {}
+    for sign in (1, -1):
+        # aperture rolls at each time that give a roll of +/-ROLL_MAX_OBSERVATORY about V1; the V1 roll changes with
+        # the aperture roll at a rate 1 +/- 0.003, so each pass reduces the error by a factor of ~300
+        a = np.full(dt.size, sign * ROLL_MAX_OBSERVATORY)
+        for _ in range(3):
+            roll_v1 = getRomanRollAngle(applyRollAngle(B_C_I, a * u.deg, aperture), rhat_sun).to_value(u.deg)
+            a += sign * ROLL_MAX_OBSERVATORY - roll_v1
+        # the stricter of the observatory limit and the conservative limit on the roll about the aperture
+        roll_limit[sign] = sign * np.minimum(sign * a, ROLL_MAX_INSTRUMENT)
+        # which limit applies at the time that sets this end of the allowed range
+        k = np.argmin(sign * (roll_limit[sign] - s))
+        binding[sign] = "instrument aperture" if sign * a[k] > ROLL_MAX_INSTRUMENT else "observatory (V1)"
+    a_min, a_max = (roll_limit[-1] - s).max(), (roll_limit[1] - s).min()
+
+    # Sun angle of V1 for the held attitudes of the limiting requested rolls
+    sun_ang_held = []
+    for a_req in (a_min, a_max):
+        b_1 = applyRollAngle(B_C_I, (a_req + s) * u.deg, aperture)[0]
+        sun_ang_held.append(np.degrees(np.arccos(np.einsum("jt,jt->t", b_1, rhat_sun))))
+
     return {"a_min": a_min, "a_max": a_max, "pa_mid": pa_mid, "pa_lo": (pa_mid - a_max) % 360,
             "pa_hi": (pa_mid - a_min) % 360, "separation": a_max - a_min, "beta": drift["beta"],
-            "sun_ang": (drift["sun_ang"].min(), drift["sun_ang"].max()), "rate": drift["rate"]}
+            "sun_ang": (drift["sun_ang"].min(), drift["sun_ang"].max()),
+            "sun_ang_held": (np.min(sun_ang_held), np.max(sun_ang_held)), "s_range": (s.min(), s.max()),
+            "binding": (binding[-1], binding[1]), "rate": drift["rate"]}
 
 
 def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.0, name=None,
@@ -205,6 +248,8 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
         aberration (bool):
             Include the velocity aberration of the target and Sun directions (see pa_v3_drift)
     """
+    if isinstance(aperture, str):
+        aperture = getSIAFAperture(aperture)
     half = duration / 2
     t_start = Time(start, scale="utc")
     t_mid = t_start + half * u.day
@@ -213,7 +258,8 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
 
     t_plot = (-half - early - 1.5, half + late + 1.5)
     t = np.linspace(t_plot[0] - 0.2, t_plot[1] + 0.2, int(round(200 * (t_plot[1] - t_plot[0] + 0.4))) + 1)
-    s = pa_v3_drift(ra, dec, t_mid, t, aperture, ephemeris, aberration)["s"]
+    drift = pa_v3_drift(ra, dec, t_mid, t, aperture, ephemeris, aberration)
+    s = drift["s"]
     y_lim = max(19.5, ROLL_MAX + np.abs(s).max() + 1)
 
     fig, ax = plt.subplots(figsize=(9, 5.8))
@@ -225,25 +271,37 @@ def plot_target_roll_limits(outdir, ra, dec, start, duration, early=0.0, late=0.
     fmt = "%b %d" if first.strftime("%H:%M") == last.strftime("%H:%M") == "00:00" else "%b %d %H:%M"
     ax.text(-half - early + 0.1, 0.97, f"possible execution span\n(start {first.strftime(fmt)} – "
             f"{last.strftime(fmt)})", va="top", fontsize=9, color=INK2, transform=ax.get_xaxis_transform())
-    for x in [-ROLL_MAX, ROLL_MAX]:
+    for x in [-ROLL_MAX_OBSERVATORY, ROLL_MAX_OBSERVATORY]:
         ax.axhline(x, color=INK, lw=1.2)
+    for x in [-ROLL_MAX_INSTRUMENT, ROLL_MAX_INSTRUMENT]:
+        ax.axhline(x, color=INK, lw=1.2, ls="--")
     in_span = (t >= -half - early) & (t <= half + late)
     for lim, c in zip([a_min, a_max], [SERIES[0], SERIES[1]]):
-        # limiting roll: its needed roll just reaches ±15° at an end of the execution span
-        need = lim + s
-        ax.plot(t, need, color=c, lw=2.2, label=f"requested roll {lim:+.2f}°")
+        # limiting roll: at an end of the execution span, its needed roll reaches the stricter of the two limits
+        need_aperture = lim + s
+        held = applyRollAngle(drift["B_C_I"], need_aperture * u.deg, aperture)
+        need_v1 = getRomanRollAngle(held, drift["rhat_sun"]).to_value(u.deg)
+        ax.plot(t, need_v1, color=c, lw=2.2, label=f"requested roll {lim:+.2f}°")
+        ax.plot(t, need_aperture, color=c, lw=1.0, ls="--")
+        # mark the curve that reaches its limit: the roll about V1 or the roll about the aperture
+        margin_v1 = ROLL_MAX_OBSERVATORY - np.abs(need_v1[in_span]).max()
+        margin_aperture = ROLL_MAX_INSTRUMENT - np.abs(need_aperture[in_span]).max()
+        need = need_v1 if margin_v1 <= margin_aperture else need_aperture
         j = np.flatnonzero(in_span)[np.argmax(np.abs(need[in_span]))]
         ax.plot(t[j], need[j], "o", ms=8, color=c, mec=INK, mew=1.2, zorder=6)
+    ax.plot([], [], color=INK, lw=1.2, label=f"roll about V1, observatory limit ±{ROLL_MAX_OBSERVATORY:g}°")
+    ax.plot([], [], color=INK, lw=1.0, ls="--",
+            label=f"roll about the aperture, conservative limit ±{ROLL_MAX_INSTRUMENT:g}°")
     ax.text(0, 0.57, f"Allowed requested rolls over the span:\n{a_min:+.2f}° to {a_max:+.2f}°", ha="center",
             fontsize=10, color=INK, transform=ax.get_xaxis_transform(),
             bbox=dict(facecolor=SURFACE, alpha=0.9, lw=0.5, edgecolor=AXIS, pad=4))
     ax.set_xlim(t_plot[0] - 0.2, t_plot[1] + 0.2)
     ax.set_ylim(-y_lim, y_lim)
     ax.set_xlabel(f"Execution time relative to the planned mid-sequence, {t_mid.strftime('%Y-%m-%d %H:%M')} UTC (days)")
-    ax.set_ylabel("Actual roll offset relative to nominal attitude (deg)")
+    ax.set_ylabel("Actual roll relative to nominal attitude (deg)")
     label = name if name else f"RA {ra:.3f}°, Dec {dec:+.3f}°"
     ax.set_title(f"{label} (β = {res['beta']:.1f}°, |rate| ≈ {abs(res['rate']):.2f}°/d)", fontsize=10.5, loc="left")
-    ax.legend(loc="center right", fontsize=9)
+    ax.legend(loc="center right", bbox_to_anchor=(1, 0.38), fontsize=9)
     fig.tight_layout()
     fig.savefig(os.path.join(outdir, filename), dpi=150)
     plt.close(fig)
@@ -398,23 +456,34 @@ if __name__ == "__main__":
           f"dPA_V3/dt at mid-sequence = {res['rate']:+.3f} deg/day")
     print(f"Allowed requested roll offsets (applyRollAngle sense): {res['a_min']:+.2f} to {res['a_max']:+.2f} deg; "
           f"symmetric limit +/-{min(res['a_max'], -res['a_min']):.2f} deg")
+    if aperture is not None:
+        print(f"Roll limits: +/-{ROLL_MAX_OBSERVATORY:g} deg about V1 (observatory) and +/-{ROLL_MAX_INSTRUMENT:g} deg "
+              f"about the aperture (conservative); stricter one at the negative end: {res['binding'][0]}, "
+              f"at the positive end: {res['binding'][1]}")
     if res["separation"] >= 0:
         print(f"Reachable fixed sky PA_V3 over the span: {res['pa_lo']:.2f} to {res['pa_hi']:.2f} deg; "
               f"maximum-separation pair {res['pa_lo']:.2f} and {res['pa_hi']:.2f} deg "
               f"(separation {res['separation']:.2f} deg)")
     else:
-        print(f"No fixed sky PA_V3 is reachable over the whole span: the nominal PA swing exceeds "
-              f"{2 * ROLL_MAX:.0f} deg by {-res['separation']:.2f} deg")
+        print(f"No fixed sky PA_V3 is reachable over the whole span: the nominal PA swing exceeds the roll range "
+              f"by {-res['separation']:.2f} deg")
     if args.pa is not None:
         for k, p in enumerate(args.pa, 1):
-            # needed roll PA_nom(t) - P over the span; its range follows from a_min, a_max
+            # P is reachable if its requested roll PA_nom(t_mid) - P is within a_min, a_max; the needed roll
+            # PA_nom(t) - P over the span follows from the range of PA_nom(t) - PA_nom(t_mid)
             r_mid = (res["pa_mid"] - p + 180) % 360 - 180
-            r_lo, r_hi = r_mid - ROLL_MAX - res["a_min"], r_mid + ROLL_MAX - res["a_max"]
-            ok = -ROLL_MAX - 0.005 <= r_lo and r_hi <= ROLL_MAX + 0.005  # tolerate the printed 0.01 deg rounding
-            print(f"PA{k} = {p:.2f} deg: needed roll {r_lo:+.2f} to {r_hi:+.2f} deg over the span "
+            r_lo, r_hi = r_mid + res["s_range"][0], r_mid + res["s_range"][1]
+            ok = res["a_min"] - 0.005 <= r_mid <= res["a_max"] + 0.005  # tolerate the printed 0.01 deg rounding
+            print(f"PA{k} = {p:.2f} deg: needed roll (about the aperture) {r_lo:+.2f} to {r_hi:+.2f} deg over the span "
                   f"({'reachable' if ok else 'NOT reachable'})")
+    if aperture is not None:
+        print(f"Sun angle of V1 at the limiting requested rolls: {res['sun_ang_held'][0]:.2f}-"
+              f"{res['sun_ang_held'][1]:.2f} deg (rolling about the aperture moves V1)")
     if res["sun_ang"][0] < SUN_ANG_MIN or res["sun_ang"][1] > SUN_ANG_MAX:
         print("WARNING: part of the RDI sequence span is outside the 54-126 deg field of regard")
+    elif res["sun_ang_held"][0] < SUN_ANG_MIN or res["sun_ang_held"][1] > SUN_ANG_MAX:
+        print("WARNING: at the limiting requested rolls, part of the RDI sequence span is outside the 54-126 deg "
+              "field of regard")
     if args.plot:
         os.makedirs(outdir, exist_ok=True)
         slug = re.sub(r"[^0-9a-z]+", "_", (args.name or "target").lower()).strip("_") or "target"
