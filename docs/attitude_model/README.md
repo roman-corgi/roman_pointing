@@ -109,7 +109,7 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
   *attitude (+V3 up, +V2 left). The aperture's offset from V1 splits into a V3 part along V1's great circle to the Sun*
   *and a V2 part across it. At nominal roll, V3 points along the great circle to the Sun, so the PA change is the*
   *angle at which the great circles from V1 and from the target meet at the Sun. In the shaded right triangle*
-  *T–N–Sun, the side opposite the Sun is |V2Ref| and the hypotenuse is tan ε, so sin ΔPA = |V2Ref|/tan ε.*
+  *In the shaded right triangle, the side opposite the Sun is |V2Ref| and the hypotenuse is tan ε, so sin ΔPA = |V2Ref|/tan ε.*
 
 * **Field of regard.** V1 is displaced toward the Sun by V3Ref, so the Sun angle of V1 is the target's minus 0.234°.
   The target's FOR becomes 54.23° ≤ ε ≤ 126.23°, which moves the window edges by ≈ 0.24 day near the ecliptic.

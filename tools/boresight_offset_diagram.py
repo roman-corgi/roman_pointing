@@ -77,7 +77,6 @@ def plot_boresight_offset_diagram(outdir, eps=60.0, scale=10.0):
     ax1.fill([T[0], N[0], sun[0]], [T[1], N[1], sun[1]], color=BLUE_LIGHT, alpha=0.6, lw=0, zorder=0)
     sq = 0.15 * r
     ax1.plot([N[0] + sq, N[0] + sq, N[0]], [0, sq, sq], color=INK, lw=1, zorder=2)
-    ax1.text(N[0] - 0.06 * r, -0.06 * r, "N", color=INK, fontsize=10, ha="right", va="top")
 
     # great circles through the Sun: V1's (vertical) and the target's
     for p0 in (T, V1n):
