@@ -19,7 +19,7 @@ from astroquery.simbad import Simbad
 import numpy as np
 import astropy.units as u
 from angutils.angutils import projplane, calcang, rotMat
-from astroquery.simbad import Simbad
+from pyvo.dal.exceptions import DALServiceError
 from astropy.coordinates import (
     SkyCoord,
     Distance,
@@ -119,15 +119,13 @@ if __name__ == "__main__":
 
     az, el = get_zero_pitch_azel_from_yaw(t0, yaw)
 
-    Simbad.add_votable_fields(
-        "ra",
-        "dec",
-        "flux",
-        "pmra",
-        "pmdec",
-        "plx_value",
-        "rvz_radvel",
-    )
+    fields = ("ra", "dec", "flux", "pmra", "pmdec", "plx_value", "rvz_radvel")
+    try:
+        Simbad.add_votable_fields(*fields)
+    except DALServiceError:
+        print("SIMBAD unreachable; falling back to the CfA mirror.")
+        Simbad.server = "simbad.harvard.edu"
+        Simbad.add_votable_fields(*fields)
 
     # let's see what we can find, cutting on Vmag
     goodres = Simbad.query_region(

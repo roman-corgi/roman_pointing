@@ -1,11 +1,11 @@
 import time
 import warnings
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
 import astropy.units as u
 import astropy.coordinates as c
+from astroquery.vizier import Vizier
 import pandas as pd
 import requests
 
@@ -160,33 +160,22 @@ def get_science_target_diameter(sci_name, sci_coord, band):
     Returns:
         tuple: (diameter_mas, source_label), or (None, None) on failure.
     """
+    vizier = Vizier(columns=["Name", "UDDV", "UDDI"], catalog="II/346/jsdc_v2", row_limit=5)
+    coord = sci_coord.icrs
+
     try:
-        from astropy.io.votable import parse_single_table
+        try:
+            result = vizier.query_region(coord, radius=5 * u.arcsec)
+        except requests.RequestException:
+            print("  VizieR (CDS) unreachable; falling back to the CfA mirror.")
+            vizier.VIZIER_SERVER = "vizier.cfa.harvard.edu"
+            result = vizier.query_region(coord, radius=5 * u.arcsec)
 
-        icrs = sci_coord.icrs
-        ra_deg = float(icrs.ra.deg)
-        dec_deg = float(icrs.dec.deg)
-
-        url = (
-            "https://vizier.cds.unistra.fr/viz-bin/votable"
-            f"?-source=II/346/jsdc_v2&-out=Name,UDDV,UDDI&-out.max=5"
-            f"&-c={ra_deg:.6f},{dec_deg:+.6f}&-c.rs=5"
-        )
-
-        resp = requests.get(
-            url,
-            headers={"User-Agent": "RomanRefStarPicker/1.0"},
-            timeout=20,
-        )
-        resp.raise_for_status()
-
-        table = parse_single_table(BytesIO(resp.content)).to_table()
-
-        if len(table) == 0:
+        if not result or len(result[0]) == 0:
             print(f"  Warning: no JSDC v2 match within 5\" for '{sci_name}' — diameter unavailable.")
             return None, None
 
-        row = table[0]
+        row = result[0][0]
 
         def parse_vot_float(col):
             try:
