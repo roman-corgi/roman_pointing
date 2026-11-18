@@ -12,6 +12,7 @@ import requests
 from astropy.coordinates import BarycentricMeanEcliptic, Distance, SkyCoord
 from astropy.time import Time
 from astroquery.simbad import Simbad
+from pyvo.dal.exceptions import DALServiceError
 from IPython.display import HTML, clear_output, display
 import ipywidgets as widgets
 from roman_pointing.roman_pointing import (
@@ -65,7 +66,12 @@ def get_target_coords(target_names):
             return None
 
     simbad = Simbad()
-    simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
+    try:
+        simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
+    except DALServiceError:
+        print("SIMBAD unreachable; falling back to the CfA mirror.")
+        simbad.server = "simbad.harvard.edu"
+        simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
     coords = {}
 
     for name in target_names:

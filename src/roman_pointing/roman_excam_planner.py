@@ -4,6 +4,7 @@ import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, Distance, BarycentricMeanEcliptic
 from astroquery.simbad import Simbad
+from pyvo.dal.exceptions import DALServiceError
 import ipywidgets as widgets
 from IPython.display import display
 import traceback
@@ -47,7 +48,12 @@ def get_exoplanet_skycoord(target_name: str) -> SkyCoord:
 
     """
     simbad = Simbad()
-    simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
+    try:
+        simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
+    except DALServiceError:
+        print("SIMBAD unreachable; falling back to the CfA mirror.")
+        simbad.server = "simbad.harvard.edu"
+        simbad.add_votable_fields("pmra", "pmdec", "plx_value", "rvz_radvel")
 
     res = simbad.query_object(target_name)
     if res is None:
