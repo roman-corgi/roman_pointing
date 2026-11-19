@@ -32,6 +32,9 @@ Homepage = "https://github.com/roman-corgi/roman_pointing"
 Repository = "https://github.com/roman-corgi/roman_pointing"
 Issues = "https://github.com/roman-corgi/roman_pointing/issues"
 
+[tool.setuptools.package-data]
+roman_pointing = ["siaf/*.xml"]
+
 [tool.setuptools.dynamic]
 version = {attr = "roman_pointing.__version__"}
 dependencies = {file = ["requirements.txt"]}

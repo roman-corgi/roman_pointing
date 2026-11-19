@@ -8,11 +8,11 @@ import re
 from roman_pointing.roman_pointing import (
     calcRomanAngles,
     getL2Positions,
+    getRomanPositions,
+    getSIAFAperture,
 )
 import numpy as np
 import astropy.units as u
-from astroquery.jplhorizons import Horizons
-from scipy.interpolate import CubicSpline
 import warnings
 from erfa import ErfaWarning
 
@@ -124,34 +124,30 @@ def get_for_intervals(targ="eps Eri", driver=None):
     return for_start, for_end
 
 
-def find_crossing_time_diff(t0, coord):
-    """Compare CPGS FOR intervals with Roman Pointing predictions"""
+def find_crossing_time_diff(t0, coord, aperture="CGI_CEN", ephemeris="horizons"):
+    """Compare CPGS FOR intervals with Roman Pointing predictions
+
+    Args:
+        t0 (astropy.time.Time):
+            CPGS FOR interval start or end time
+        coord (astropy.coordinates.SkyCoord):
+            Target coordinates (BarycentricMeanEcliptic)
+        aperture (str or None):
+            SIAF aperture placed on the target (None for the boresight V1)
+        ephemeris (str):
+            Observatory position: 'horizons' (JPL Horizons orbit of Roman) or 'L2'
+
+    Returns:
+        astropy.time.TimeDelta:
+            t0 minus the roman_pointing FOR crossing time(s) within +/-12 h of t0
+
+    """
 
     ts = t0 + (np.arange(0, 86400) - 86400 / 2) * u.s
 
-    """
-    # get L2 location from Horizons
-    obj = Horizons(
-        id="32",
-        location="@0",
-        epochs={"start": ts[0].value, "stop": (ts[-1] + 1 * u.h).value, "step": "1h"},
-    )
-    L2_vectors_table = obj.vectors()
-    L2pos = (
-        np.vstack([L2_vectors_table[l].data.filled() for l in ["x", "y", "z"]]) * u.AU
-    )
-    L2ts = L2_vectors_table["datetime_jd"].data.filled()
-    L2spline = CubicSpline(L2ts, L2pos.T, extrapolate=False)
-
-    L2 = L2spline(ts.to_value("jd")).T * u.AU
-    """
-    L2 = getL2Positions(ts)
-
-    sun_ang, _, _, _ = calcRomanAngles(
-        coord,
-        ts,
-        L2,
-    )
+    aper = getSIAFAperture(aperture) if aperture else None
+    r_obs = getRomanPositions(ts) if ephemeris == "horizons" else getL2Positions(ts)
+    sun_ang, _, _, _ = calcRomanAngles(coord, ts, r_obs, aperture=aper)
 
     ko = (sun_ang > 54 * u.deg) & (sun_ang < 126 * u.deg)
     t1 = ts[np.where(np.diff(ko))]
