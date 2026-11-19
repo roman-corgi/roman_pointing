@@ -1,3 +1,3 @@
-`roman_siaf_inflight_20261021_CGI.xml` contains the release header and CGI `SiafEntry` blocks of the Roman SIAF, read by `roman_pointing.getSIAFAperture`.
-It was extracted from the in-flight SIAF release `roman_siaf_inflight_20261021.xml`.
-Regenerate it from a new release with `tools/extract_siaf_cgi.py` (see its docstring), then update `SIAF_FILE` in `roman_pointing.py`.
+`roman_siaf_cgi.xml` holds the CGI aperture parameters of the Roman SIAF that `roman_pointing.getSIAFAperture` reads: for each CGI aperture, its `AperName`, `V2Ref`, `V3Ref` and `V3IdlYAngle`.
+The current values are from the in-flight SIAF release `roman_siaf_inflight_20261021.xml`.
+To update them from a new release, run `tools/extract_siaf_cgi.py` (see its docstring) with the same output file name, and record the release name here.

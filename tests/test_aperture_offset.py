@@ -2,6 +2,8 @@
 getEXCAMPositionAngle."""
 
 import os
+import warnings
+import xml.etree.ElementTree as ET
 
 import astropy.units as u
 import numpy as np
@@ -135,12 +137,13 @@ def test_default_matches_main(radec):
 
 
 def test_siaf_extract(aperture):
-    assert SIAF_FILE.endswith("_CGI.xml")
+    # the packaged extract holds only the parameters roman_pointing uses
+    for entry in ET.parse(SIAF_FILE).getroot().iter("SiafEntry"):
+        assert [e.tag for e in entry] == ["AperName", "V2Ref", "V3Ref", "V3IdlYAngle"]
     assert aperture["V2Ref"] == -1104.214 and aperture["V3Ref"] == -840.945
     # V3IdlYAngle near -30 deg (SIAF releases from 20260928); older releases give ~240 deg, which would make
     # PA_APER = PA_V3 + V3IdlYAngle + 180 deg wrong by 90 deg. The wide tolerance allows later calibration updates.
     assert abs(aperture["V3IdlYAngle"] + 30) < 10
-    assert aperture["VIdlParity"] == -1
     assert np.isclose(np.linalg.norm(aperture["u_B"]), 1, rtol=0, atol=1e-15)
     with pytest.raises(ValueError):
         getSIAFAperture("WFI01_FULL")
@@ -161,6 +164,22 @@ def test_aperture_on_target(aperture, for_targets):
         np.testing.assert_allclose(np.arccos(np.einsum("jt,jt->t", B_C_I[0], rhat_sun)), sun_ang_v1.value,
                                    rtol=0, atol=1e-12)
 
+
+def test_aperture_iteration_fallback(aperture, for_targets):
+    target = for_targets[0]
+    # the CGI aperture converges without a warning
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        calcRomanAngles(target, TS, getL2Positions(TS), aperture=aperture)
+    # an aperture 80 deg from V1 does not converge; the attitude falls back to V1 on the target
+    v2 = np.radians(80.0)
+    far = dict(aperture, V2Ref=80.0 * 3600, V3Ref=0.0, u_B=np.array([np.cos(v2), np.sin(v2), 0.0]))
+    with pytest.warns(UserWarning, match="did not converge"):
+        sun_ang, yaw, pitch, B_C_I = calcRomanAngles(target, TS, getL2Positions(TS), aperture=far)
+    sun_ang_v1, yaw_v1, pitch_v1, B_C_I_v1 = calcRomanAngles(target, TS, getL2Positions(TS))
+    np.testing.assert_allclose(B_C_I, B_C_I_v1, rtol=0, atol=1e-12)
+    for value, ref in ((sun_ang, sun_ang_v1), (yaw, yaw_v1), (pitch, pitch_v1)):
+        np.testing.assert_allclose(value.to_value(u.rad), ref.to_value(u.rad), rtol=0, atol=1e-12)
 
 def test_local_pa_change(aperture, for_targets):
     v2 = np.radians(aperture["V2Ref"] / 3600)

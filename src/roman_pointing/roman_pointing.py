@@ -21,9 +21,8 @@ from astroquery.jplhorizons import Horizons
 import scipy.optimize
 from scipy.interpolate import CubicSpline
 
-SIAF_FILE = os.path.join(
-    os.path.dirname(__file__), "siaf", "roman_siaf_inflight_20261021_CGI.xml"
-)
+# CGI aperture parameters from a Roman SIAF release (see siaf/README.md for the release used)
+SIAF_FILE = os.path.join(os.path.dirname(__file__), "siaf", "roman_siaf_cgi.xml")
 
 
 # find L2 location
@@ -383,15 +382,15 @@ def getSIAFAperture(aper_name="CGI_CEN", siaf_file=SIAF_FILE):
 
     Returns:
         dict:
-            V2Ref, V3Ref (arcsec), V3IdlYAngle (deg), VIdlParity, and u_B, the unit
-            vector to the aperture reference point in the body (b_1, b_2, b_3) frame.
+            V2Ref, V3Ref (arcsec), V3IdlYAngle (deg), and u_B, the unit vector to the
+            aperture reference point in the body (b_1, b_2, b_3) frame.
 
     """
     for entry in ET.parse(siaf_file).getroot().iter("SiafEntry"):
         if entry.findtext("AperName") == aper_name:
             aperture = {
                 k: float(entry.findtext(k))
-                for k in ("V2Ref", "V3Ref", "V3IdlYAngle", "VIdlParity")
+                for k in ("V2Ref", "V3Ref", "V3IdlYAngle")
             }
             v2 = np.radians(aperture["V2Ref"] / 3600)
             v3 = np.radians(aperture["V3Ref"] / 3600)
@@ -419,8 +418,9 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None, aperture=None, v_obs_G=No
             computed automatically
         aperture (dict, optional):
             Aperture from getSIAFAperture(). If given, the nominal attitude places the
-            aperture reference point, instead of b_1, on the target. If None, b_1 is
-            pointed at the target.
+            aperture reference point, instead of b_1, on the target, by iteration. At
+            times where the iteration does not converge, a warning is issued and b_1 is
+            pointed at the target instead. If None, b_1 is pointed at the target.
         v_obs_G (astropy.units.Quantity(numpy.ndarray(float)), optional):
             Observatory barycentric velocity for each observation time (3xn), e.g.
             from getRomanVelocities. If given, the target and Sun directions are
@@ -493,7 +493,8 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None, aperture=None, v_obs_G=No
     # direction that places the aperture reference point on the target, which is found
     # by iteration.
     rhat_point = rhat_target_obs
-    for _ in range(10):
+    converged = aperture is None
+    for k in range(10):
         # projection of pointing vector onto b1/e2 plane:
         rhat_point_proj1 = np.hstack(
             [
@@ -527,13 +528,31 @@ def calcRomanAngles(target, ts, r_obs_G, r_sun_G=None, aperture=None, v_obs_G=No
 
         if aperture is None:
             break
+        if k == 0:
+            # V1 on the target: the fallback if the aperture iteration does not converge
+            B_C_I_v1, yaw_v1, pitch_v1 = B_C_I, yaw, pitch
 
         # offset of the aperture reference point (inertial direction B_C_I^T u_B)
         # from the target; shift the pointing direction by the same amount
         dr = rhat_target_obs - np.einsum("ijt,i->jt", B_C_I, aperture["u_B"])
-        if np.max(np.linalg.norm(dr, axis=0)) < 1e-10:
+        offset = np.linalg.norm(dr, axis=0)
+        if np.max(offset) < 1e-10:
+            converged = True
             break
         rhat_point = (rhat_point + dr) / np.linalg.norm(rhat_point + dr, axis=0)
+
+    if not converged:
+        # revert the times that did not converge to the attitude with V1 on the target
+        bad = offset >= 1e-10
+        warnings.warn(
+            f"Aperture iteration did not converge at {np.sum(bad)} of {len(bad)} times "
+            f"(aperture offset from the target up to {np.degrees(np.max(offset)) * 3600:.3g} "
+            "arcsec); using the attitude with V1 on the target at those times"
+        )
+        B_C_I[:, :, bad] = B_C_I_v1[:, :, bad]
+        yaw[bad] = yaw_v1[bad]
+        pitch[bad] = pitch_v1[bad]
+        rhat_point[:, bad] = rhat_target_obs[:, bad]
 
     # with an aperture, the sun angle (field of regard constraint) applies to b_1
     if aperture is not None:

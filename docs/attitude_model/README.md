@@ -130,11 +130,13 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
 
 * **SIAF extract and reader.** The full SIAF release is 16 MB, almost all of it WFI SpecPars grids, and the public
   [pysiaf](https://github.com/spacetelescope/pysiaf) repository does not yet hold the commissioning SIAF.
-  * `src/roman_pointing/siaf/roman_siaf_inflight_20261021_CGI.xml` is a 4 kB copy of the release header and its CGI
-    `SiafEntry` blocks, made with `tools/extract_siaf_cgi.py`, and packaged via `[tool.setuptools.package-data]`.
-  * `getSIAFAperture(aper_name="CGI_CEN", siaf_file=SIAF_FILE)` returns `V2Ref`, `V3Ref`, `V3IdlYAngle`,
-    `VIdlParity` and u_B. The keys match pysiaf's aperture attributes, so a later switch to
-    `pysiaf.Siaf("Roman")[aper_name]` only changes this function.
+  * `src/roman_pointing/siaf/roman_siaf_cgi.xml` holds only the parameters `roman_pointing` uses: for each CGI
+    aperture, its `AperName`, `V2Ref`, `V3Ref` and `V3IdlYAngle`. It is made from a SIAF release with
+    `tools/extract_siaf_cgi.py`, and packaged via `[tool.setuptools.package-data]`. The release it comes from is
+    recorded in `src/roman_pointing/siaf/README.md` (currently `roman_siaf_inflight_20261021.xml`).
+  * `getSIAFAperture(aper_name="CGI_CEN", siaf_file=SIAF_FILE)` returns `V2Ref`, `V3Ref`, `V3IdlYAngle` and u_B.
+    It also reads full SIAF releases (e.g. for WFI_CEN). The keys match pysiaf's aperture attributes, so a later
+    switch to `pysiaf.Siaf("Roman")[aper_name]` only changes this function.
   * Extracts must come from releases dated 20260928 or later. Earlier releases used a different ideal-frame
     convention (V3IdlYAngle ≈ 240°).
 * **`calcRomanAngles(..., aperture=None)`.**
@@ -142,6 +144,9 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
     iterated until the aperture lands on the target: `rhat_point += rhat_target − B_C_Iᵀ u_B`.
   * The iteration converges by ~10³ per pass (1388″ → 2–5″ → 0.01″ → numerical floor). It keeps the Sun in the
     V1–V3 plane; rotating the V1-on-target attitude rigidly onto the aperture would not.
+  * If the aperture is not within 10⁻¹⁰ (2 × 10⁻⁵″) of the target after 10 passes, the function warns and uses the
+    attitude with V1 on the target at those times. This happens only for aperture offsets far larger than CGI_CEN's
+    (tens of degrees).
   * `sun_ang`, `yaw` and `pitch` refer to V1.
 * **`applyRollAngle(..., aperture=None)`.** Rolls about u_B with Rodrigues' formula, `angutils.calcDCM(u_B, -a)`.
   `calcDCM` returns the DCM in the opposite sense to `rotMat`, so `calcDCM([1, 0, 0], -a)` equals `rotMat(1, a)`
@@ -160,6 +165,9 @@ the examples in [`docs/field_rotation_rate/README.md`](../field_rotation_rate/RE
   * the Sun angle of V1 minus the target's equals V3Ref to 10⁻³ deg;
   * ΔPA matches V2Ref/tan ε − V2Ref·V3Ref to 10⁻⁵ deg, which catches a sign or axis-convention error.
 * A roll of r about the aperture keeps the target on it and changes the aperture PA by exactly −r.
+* The CGI_CEN iteration converges without a warning. An aperture 80° from V1 does not converge; the function then
+  warns and returns the V1-on-target attitude, Sun angle, yaw and pitch.
+* The packaged SIAF extract holds only `AperName`, `V2Ref`, `V3Ref` and `V3IdlYAngle`.
 * `getRomanRollAngle` is 0 at nominal and r after a roll of r about V1 (10⁻⁹ deg). A 15° roll about the aperture is
   within 0.05° of 15° about V1, larger for ε < 90° and smaller above, and the iteration of `plan_roll_limits.py` finds
   the aperture roll for ±15° about V1 to 10⁻⁸ deg. With the conservative aperture limit added, the stricter of the
@@ -365,6 +373,7 @@ pa_v3 = getRomanPositionAngle(removeAberration(B_C_I, v_obs_G, aperture), apertu
 
 ## 8. Open items
 
-* **Future SIAF updates.** When a new SIAF release arrives, regenerate the extract, update `SIAF_FILE`, and remove the
-  previous extract.
+* **Future SIAF updates.** When a new SIAF release arrives, regenerate `roman_siaf_cgi.xml` with
+  `tools/extract_siaf_cgi.py` (same file name, so `SIAF_FILE` does not change), and record the release name in
+  `src/roman_pointing/siaf/README.md`.
   * During science operations, the most recent SIAF will be synced to the public pysiaf repo. It will then be possible to modify `getSIAFAperture` to import the aperture offset and orientation data directly from pysiaf (https://github.com/spacetelescope/pysiaf).       
